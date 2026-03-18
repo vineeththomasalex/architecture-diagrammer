@@ -1,5 +1,5 @@
 import React from 'react';
-import { NODE_WIDTH, NODE_HEIGHT, NODE_COLORS, type DiagramNode as DiagramNodeType, type NodeType } from '../types/diagram';
+import { NODE_WIDTH, NODE_HEIGHT, NODE_COLORS, NODE_ICONS, type DiagramNode as DiagramNodeType, type NodeType } from '../types/diagram';
 
 interface Props {
   node: DiagramNodeType;
@@ -7,52 +7,81 @@ interface Props {
   textColor: string;
 }
 
+const W = NODE_WIDTH;
+const H = NODE_HEIGHT;
+
 function getNodeShape(type: NodeType, color: string): React.ReactElement {
   switch (type) {
-    case 'frontend':
-      return <rect x="0" y="0" width={NODE_WIDTH} height={NODE_HEIGHT} rx="16" ry="16" fill={color} />;
+    // Rounded rect — client, cdn, nosql, dns
+    case 'client':
+    case 'cdn':
+    case 'nosql':
+    case 'dns':
+      return <rect x="0" y="0" width={W} height={H} rx="14" ry="14" fill={color} />;
+
+    // Wide/short rect — loadbalancer, gateway
+    case 'loadbalancer':
+    case 'gateway':
+      return <rect x="-10" y="6" width={W + 20} height={H - 12} rx="6" ry="6" fill={color} />;
+
+    // Standard rect — service, worker, search, notification, storage
+    case 'service':
+    case 'worker':
+    case 'search':
+    case 'notification':
+    case 'storage':
+      return <rect x="0" y="0" width={W} height={H} rx="4" ry="4" fill={color} />;
+
+    // Cylinder — database
     case 'database':
       return (
         <g>
-          <rect x="0" y="8" width={NODE_WIDTH} height={NODE_HEIGHT - 16} fill={color} />
-          <ellipse cx={NODE_WIDTH / 2} cy="8" rx={NODE_WIDTH / 2} ry="10" fill={color} />
-          <ellipse cx={NODE_WIDTH / 2} cy={NODE_HEIGHT - 8} rx={NODE_WIDTH / 2} ry="10" fill={color} />
-          <rect x="0" y="8" width={NODE_WIDTH} height={NODE_HEIGHT - 16} fill={color} opacity="0.8" />
-          <ellipse cx={NODE_WIDTH / 2} cy="8" rx={NODE_WIDTH / 2} ry="10" fill={color} stroke="rgba(255,255,255,0.2)" strokeWidth="1" />
+          <rect x="0" y="8" width={W} height={H - 16} fill={color} />
+          <ellipse cx={W / 2} cy="8" rx={W / 2} ry="10" fill={color} />
+          <ellipse cx={W / 2} cy={H - 8} rx={W / 2} ry="10" fill={color} />
+          <rect x="0" y="8" width={W} height={H - 16} fill={color} opacity="0.8" />
+          <ellipse cx={W / 2} cy="8" rx={W / 2} ry="10" fill={color} stroke="rgba(255,255,255,0.2)" strokeWidth="1" />
         </g>
       );
+
+    // Diamond — cache
     case 'cache':
       return (
         <polygon
-          points={`${NODE_WIDTH / 2},0 ${NODE_WIDTH},${NODE_HEIGHT / 2} ${NODE_WIDTH / 2},${NODE_HEIGHT} 0,${NODE_HEIGHT / 2}`}
+          points={`${W / 2},0 ${W},${H / 2} ${W / 2},${H} 0,${H / 2}`}
           fill={color}
         />
       );
+
+    // Parallelogram — queue, stream
+    case 'queue':
+    case 'stream': {
+      const skew = 16;
+      return (
+        <polygon
+          points={`${skew},0 ${W},0 ${W - skew},${H} 0,${H}`}
+          fill={color}
+        />
+      );
+    }
+
+    // Dashed border — external
     case 'external':
       return (
         <rect
-          x="0" y="0" width={NODE_WIDTH} height={NODE_HEIGHT} rx="4" ry="4"
+          x="0" y="0" width={W} height={H} rx="4" ry="4"
           fill="transparent" stroke={color} strokeWidth="2" strokeDasharray="8 4"
         />
       );
+
     default:
-      return <rect x="0" y="0" width={NODE_WIDTH} height={NODE_HEIGHT} rx="4" ry="4" fill={color} />;
+      return <rect x="0" y="0" width={W} height={H} rx="4" ry="4" fill={color} />;
   }
 }
 
-function getTypeIcon(type: NodeType): string {
-  switch (type) {
-    case 'frontend': return '🖥️';
-    case 'backend': return '⚙️';
-    case 'database': return '🗄️';
-    case 'queue': return '📨';
-    case 'cache': return '⚡';
-    case 'external': return '🌐';
-  }
-}
-
-const DiagramNode: React.FC<Props> = ({ node, onDragStart, textColor }) => {
+const DiagramNodeComponent: React.FC<Props> = ({ node, onDragStart, textColor }) => {
   const color = NODE_COLORS[node.type];
+  const icon = NODE_ICONS[node.type];
   const isExternal = node.type === 'external';
   const labelColor = isExternal ? textColor : '#fff';
 
@@ -65,8 +94,8 @@ const DiagramNode: React.FC<Props> = ({ node, onDragStart, textColor }) => {
     >
       {getNodeShape(node.type, color)}
       <text
-        x={NODE_WIDTH / 2}
-        y={NODE_HEIGHT / 2 - 8}
+        x={W / 2}
+        y={H / 2 - 8}
         textAnchor="middle"
         dominantBaseline="middle"
         fill={labelColor}
@@ -74,11 +103,11 @@ const DiagramNode: React.FC<Props> = ({ node, onDragStart, textColor }) => {
         fontWeight="600"
         fontFamily="Inter, system-ui, sans-serif"
       >
-        {getTypeIcon(node.type)} {node.label}
+        {icon} {node.label}
       </text>
       <text
-        x={NODE_WIDTH / 2}
-        y={NODE_HEIGHT / 2 + 12}
+        x={W / 2}
+        y={H / 2 + 12}
         textAnchor="middle"
         dominantBaseline="middle"
         fill={labelColor}
@@ -92,4 +121,4 @@ const DiagramNode: React.FC<Props> = ({ node, onDragStart, textColor }) => {
   );
 };
 
-export default DiagramNode;
+export default DiagramNodeComponent;

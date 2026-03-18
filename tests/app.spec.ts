@@ -9,7 +9,7 @@ test.describe('Architecture Diagrammer', () => {
 
   test('page loads with correct heading', async ({ page }) => {
     const heading = page.locator('h1');
-    await expect(heading).toContainText('Architecture Diagrammer');
+    await expect(heading).toContainText('System Design Diagrammer');
   });
 
   test('SVG canvas is present with nodes rendered', async ({ page }) => {
@@ -27,18 +27,18 @@ test.describe('Architecture Diagrammer', () => {
 
     const value = await textarea.inputValue();
     expect(value).toContain('nodes:');
-    expect(value).toContain('Web App');
-    expect(value).toContain('API Server');
+    expect(value).toContain('Client Apps');
+    expect(value).toContain('API Gateway');
   });
 
   test('default nodes are rendered in the SVG', async ({ page }) => {
     const svgText = await page.locator('.diagram-svg').innerHTML();
 
-    // The default YAML defines: Web App, API Server, PostgreSQL, Redis Cache
-    expect(svgText).toContain('Web App');
-    expect(svgText).toContain('API Server');
-    expect(svgText).toContain('PostgreSQL');
-    expect(svgText).toContain('Redis Cache');
+    // The default YAML is a Netflix system design
+    expect(svgText).toContain('Client Apps');
+    expect(svgText).toContain('API Gateway');
+    expect(svgText).toContain('Load Balancer');
+    expect(svgText).toContain('Video Storage');
   });
 
   test('connections are rendered as paths', async ({ page }) => {

@@ -9,15 +9,72 @@ import type { DiagramData, Theme } from './types/diagram';
 import { DEFAULT_YAML } from './types/diagram';
 import './App.css';
 
+interface SavedDiagram {
+  id: string;
+  name: string;
+  yaml: string;
+  lastModified: number;
+}
+
+const STORAGE_KEY = 'sysdesign-diagrams';
+const ACTIVE_KEY = 'sysdesign-active';
+
+function loadDiagrams(): SavedDiagram[] {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (raw) return JSON.parse(raw);
+  } catch { /* ignore */ }
+  return [];
+}
+
+function saveDiagrams(diagrams: SavedDiagram[]) {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(diagrams));
+}
+
+function newId(): string {
+  return Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+}
+
 function App() {
-  const [yaml, setYaml] = useState(DEFAULT_YAML);
+  const [diagrams, setDiagrams] = useState<SavedDiagram[]>(() => {
+    const saved = loadDiagrams();
+    if (saved.length > 0) return saved;
+    return [{ id: newId(), name: 'Netflix Design', yaml: DEFAULT_YAML, lastModified: Date.now() }];
+  });
+
+  const [activeId, setActiveId] = useState<string>(() => {
+    const saved = localStorage.getItem(ACTIVE_KEY);
+    const ids = loadDiagrams().map((d) => d.id);
+    if (saved && ids.includes(saved)) return saved;
+    return diagrams[0].id;
+  });
+
+  const activeDiagram = diagrams.find((d) => d.id === activeId) || diagrams[0];
+  const yaml = activeDiagram.yaml;
+
   const [diagram, setDiagram] = useState<DiagramData>({ nodes: [], connections: [] });
   const [parseError, setParseError] = useState<string | null>(null);
   const [theme, setTheme] = useState<Theme>('dark');
   const [copyFeedback, setCopyFeedback] = useState(false);
   const svgRef = useRef<SVGSVGElement | null>(null);
   const initialLayoutDone = useRef(false);
+  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // Persist active tab
+  useEffect(() => {
+    localStorage.setItem(ACTIVE_KEY, activeId);
+  }, [activeId]);
+
+  // Debounced auto-save
+  useEffect(() => {
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    saveTimer.current = setTimeout(() => {
+      saveDiagrams(diagrams);
+    }, 400);
+    return () => { if (saveTimer.current) clearTimeout(saveTimer.current); };
+  }, [diagrams]);
+
+  // Parse YAML whenever it changes
   useEffect(() => {
     const { data, error } = parseYaml(yaml);
     setParseError(error);
@@ -40,6 +97,37 @@ function App() {
       });
     }
   }, [yaml]);
+
+  const setYaml = useCallback((newYaml: string) => {
+    setDiagrams((prev) =>
+      prev.map((d) =>
+        d.id === activeId ? { ...d, yaml: newYaml, lastModified: Date.now() } : d
+      )
+    );
+  }, [activeId]);
+
+  const handleNewDiagram = useCallback(() => {
+    const id = newId();
+    const name = `Diagram ${diagrams.length + 1}`;
+    setDiagrams((prev) => [...prev, { id, name, yaml: DEFAULT_YAML, lastModified: Date.now() }]);
+    setActiveId(id);
+    initialLayoutDone.current = false;
+  }, [diagrams.length]);
+
+  const handleDeleteDiagram = useCallback((id: string) => {
+    setDiagrams((prev) => {
+      if (prev.length <= 1) return prev;
+      const next = prev.filter((d) => d.id !== id);
+      if (activeId === id) setActiveId(next[0].id);
+      return next;
+    });
+    initialLayoutDone.current = false;
+  }, [activeId]);
+
+  const handleSelectTab = useCallback((id: string) => {
+    setActiveId(id);
+    initialLayoutDone.current = false;
+  }, []);
 
   const handleNodeMove = useCallback((id: string, x: number, y: number) => {
     setDiagram((prev) => ({
@@ -71,7 +159,7 @@ function App() {
   return (
     <div className={`app-container theme-${theme}`}>
       <header className="app-header">
-        <h1>Architecture Diagrammer 📐</h1>
+        <h1>System Design Diagrammer 📐</h1>
         <Toolbar
           theme={theme}
           onThemeChange={setTheme}
@@ -80,6 +168,29 @@ function App() {
           onCopyYaml={handleCopyYaml}
         />
       </header>
+      <div className="tab-bar">
+        {diagrams.map((d) => (
+          <div
+            key={d.id}
+            className={`tab ${d.id === activeId ? 'tab-active' : ''}`}
+            onClick={() => handleSelectTab(d.id)}
+          >
+            <span className="tab-name">{d.name}</span>
+            {diagrams.length > 1 && (
+              <button
+                className="tab-close"
+                onClick={(e) => { e.stopPropagation(); handleDeleteDiagram(d.id); }}
+                title="Close tab"
+              >
+                ×
+              </button>
+            )}
+          </div>
+        ))}
+        <button className="tab-add" onClick={handleNewDiagram} title="New diagram">
+          +
+        </button>
+      </div>
       <main className="app-main">
         <YamlEditor value={yaml} onChange={setYaml} error={parseError} />
         <DiagramCanvas data={diagram} theme={theme} onNodeMove={handleNodeMove} svgRef={svgRef} />
