@@ -1,4 +1,4 @@
-import React, { useRef, useCallback, useMemo } from 'react';
+import React, { useRef, useCallback, useMemo, useEffect } from 'react';
 import { NODE_COLORS, CONNECTION_STYLES, type NodeType, type ConnectionType } from '../types/diagram';
 import ReferencePanel from './ReferencePanel';
 
@@ -6,6 +6,7 @@ interface Props {
   value: string;
   onChange: (value: string) => void;
   error: string | null;
+  highlightLines?: { start: number; end: number } | null;
 }
 
 const YAML_KEYWORDS = ['nodes:', 'connections:'];
@@ -77,7 +78,7 @@ function highlightYaml(text: string): React.ReactNode[] {
   });
 }
 
-const YamlEditor: React.FC<Props> = ({ value, onChange, error }) => {
+const YamlEditor: React.FC<Props> = ({ value, onChange, error, highlightLines }) => {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const preRef = useRef<HTMLPreElement>(null);
 
@@ -87,6 +88,29 @@ const YamlEditor: React.FC<Props> = ({ value, onChange, error }) => {
       preRef.current.scrollLeft = textareaRef.current.scrollLeft;
     }
   }, []);
+
+  // Scroll textarea to highlighted lines and select them
+  useEffect(() => {
+    if (!highlightLines || !textareaRef.current) return;
+    const ta = textareaRef.current;
+    const lines = value.split('\n');
+    let startPos = 0;
+    for (let i = 0; i < highlightLines.start; i++) {
+      startPos += lines[i].length + 1;
+    }
+    let endPos = startPos;
+    for (let i = highlightLines.start; i <= Math.min(highlightLines.end, lines.length - 1); i++) {
+      endPos += lines[i].length + 1;
+    }
+    ta.focus();
+    ta.setSelectionRange(startPos, endPos - 1);
+    // Scroll to show the selection
+    const lineHeight = 20.8; // matches CSS line-height
+    ta.scrollTop = Math.max(0, highlightLines.start * lineHeight - 60);
+    if (preRef.current) {
+      preRef.current.scrollTop = ta.scrollTop;
+    }
+  }, [highlightLines, value]);
 
   const highlighted = useMemo(() => highlightYaml(value), [value]);
 

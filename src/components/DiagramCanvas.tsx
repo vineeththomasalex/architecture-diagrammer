@@ -8,10 +8,12 @@ interface Props {
   data: DiagramData;
   theme: Theme;
   onNodeMove: (id: string, x: number, y: number) => void;
+  onNodeClick?: (id: string) => void;
+  onConnectionClick?: (from: string, to: string) => void;
   svgRef: React.RefObject<SVGSVGElement | null>;
 }
 
-const DiagramCanvas: React.FC<Props> = ({ data, theme, onNodeMove, svgRef }) => {
+const DiagramCanvas: React.FC<Props> = ({ data, theme, onNodeMove, onNodeClick, onConnectionClick, svgRef }) => {
   const dragState = useRef<{ id: string; offsetX: number; offsetY: number } | null>(null);
   const panState = useRef<{ startX: number; startY: number; originX: number; originY: number } | null>(null);
   const styles = THEME_STYLES[theme];
@@ -166,11 +168,11 @@ const DiagramCanvas: React.FC<Props> = ({ data, theme, onNodeMove, svgRef }) => 
         <rect x={viewBox.x - 1000} y={viewBox.y - 1000} width={gridW + 2000} height={gridH + 2000} fill="url(#grid)" />
 
         {data.connections.map((conn, i) => (
-          <DiagramConnection key={`${conn.from}-${conn.to}-${i}`} connection={conn} nodes={data.nodes} textColor={styles.text} />
+          <DiagramConnection key={`${conn.from}-${conn.to}-${i}`} connection={conn} nodes={data.nodes} textColor={styles.text} onClick={onConnectionClick} />
         ))}
 
         {data.nodes.map((node) => (
-          <DiagramNode key={node.id} node={node} onDragStart={handleDragStart} textColor={styles.text} />
+          <DiagramNode key={node.id} node={node} onDragStart={handleDragStart} onClick={onNodeClick} textColor={styles.text} />
         ))}
       </svg>
     </div>

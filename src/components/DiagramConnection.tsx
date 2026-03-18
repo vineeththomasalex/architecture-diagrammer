@@ -6,9 +6,10 @@ interface Props {
   connection: DiagramConnectionType;
   nodes: DiagramNode[];
   textColor: string;
+  onClick?: (from: string, to: string) => void;
 }
 
-const DiagramConnection: React.FC<Props> = ({ connection, nodes, textColor }) => {
+const DiagramConnection: React.FC<Props> = ({ connection, nodes, textColor, onClick }) => {
   const source = nodes.find((n) => n.id === connection.from);
   const target = nodes.find((n) => n.id === connection.to);
   if (!source || !target) return null;
@@ -40,7 +41,7 @@ const DiagramConnection: React.FC<Props> = ({ connection, nodes, textColor }) =>
   const markerId = `arrowhead-${connType}`;
 
   return (
-    <g className="diagram-connection">
+    <g className="diagram-connection" onClick={() => onClick?.(connection.from, connection.to)} style={{ cursor: onClick ? 'pointer' : 'default' }}>
       <defs>
         <marker
           id={markerId}
@@ -53,6 +54,13 @@ const DiagramConnection: React.FC<Props> = ({ connection, nodes, textColor }) =>
           <polygon points="0 0, 10 3.5, 0 7" fill={style.stroke} opacity="0.8" />
         </marker>
       </defs>
+      {/* Wider invisible hit area for easier clicking */}
+      <path
+        d={pathD}
+        stroke="transparent"
+        strokeWidth="12"
+        fill="none"
+      />
       <path
         d={pathD}
         stroke={style.stroke}

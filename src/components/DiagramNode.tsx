@@ -4,6 +4,7 @@ import { NODE_WIDTH, NODE_HEIGHT, NODE_COLORS, NODE_ICONS, type DiagramNode as D
 interface Props {
   node: DiagramNodeType;
   onDragStart: (id: string, e: React.MouseEvent) => void;
+  onClick?: (id: string) => void;
   textColor: string;
 }
 
@@ -79,16 +80,21 @@ function getNodeShape(type: NodeType, color: string): React.ReactElement {
   }
 }
 
-const DiagramNodeComponent: React.FC<Props> = ({ node, onDragStart, textColor }) => {
+const DiagramNodeComponent: React.FC<Props> = ({ node, onDragStart, onClick, textColor }) => {
   const color = NODE_COLORS[node.type];
   const icon = NODE_ICONS[node.type];
   const isExternal = node.type === 'external';
   const labelColor = isExternal ? textColor : '#fff';
 
+  const handleMouseDown = (e: React.MouseEvent) => {
+    if (e.button === 0 && onClick) onClick(node.id);
+    onDragStart(node.id, e);
+  };
+
   return (
     <g
       transform={`translate(${node.x}, ${node.y})`}
-      onMouseDown={(e) => onDragStart(node.id, e)}
+      onMouseDown={handleMouseDown}
       style={{ cursor: 'grab' }}
       className="diagram-node"
     >
