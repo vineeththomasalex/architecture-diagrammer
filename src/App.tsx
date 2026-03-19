@@ -3,9 +3,9 @@ import YamlEditor from './components/YamlEditor';
 import DiagramCanvas from './components/DiagramCanvas';
 import Toolbar from './components/Toolbar';
 import { parseYaml } from './utils/yamlParser';
-import { gridLayout, forceLayout } from './utils/layoutEngine';
+import { gridLayout, forceLayout, tieredLayout } from './utils/layoutEngine';
 import { exportSvgToFile, copyYamlToClipboard } from './utils/exportSvg';
-import type { DiagramData, Theme } from './types/diagram';
+import type { DiagramData, Theme, NodeType, ConnectionType } from './types/diagram';
 import { DEFAULT_YAML } from './types/diagram';
 import './App.css';
 
@@ -13,6 +13,7 @@ interface SavedDiagram {
   id: string;
   name: string;
   yaml: string;
+  notes: string;
   lastModified: number;
 }
 
@@ -39,7 +40,7 @@ function App() {
   const [diagrams, setDiagrams] = useState<SavedDiagram[]>(() => {
     const saved = loadDiagrams();
     if (saved.length > 0) return saved;
-    return [{ id: newId(), name: 'Netflix Design', yaml: DEFAULT_YAML, lastModified: Date.now() }];
+    return [{ id: newId(), name: 'Netflix Design', yaml: DEFAULT_YAML, notes: '', lastModified: Date.now() }];
   });
 
   const [activeId, setActiveId] = useState<string>(() => {
@@ -51,12 +52,15 @@ function App() {
 
   const activeDiagram = diagrams.find((d) => d.id === activeId) || diagrams[0];
   const yaml = activeDiagram.yaml;
+  const notes = activeDiagram.notes || '';
 
   const [diagram, setDiagram] = useState<DiagramData>({ nodes: [], connections: [] });
   const [parseError, setParseError] = useState<string | null>(null);
   const [theme, setTheme] = useState<Theme>('dark');
   const [copyFeedback, setCopyFeedback] = useState(false);
   const [highlightLines, setHighlightLines] = useState<{ start: number; end: number } | null>(null);
+  const [flashLines, setFlashLines] = useState<{ start: number; end: number } | null>(null);
+  const [editorTab, setEditorTab] = useState<'yaml' | 'notes'>('yaml');
   const svgRef = useRef<SVGSVGElement | null>(null);
   const initialLayoutDone = useRef(false);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -89,9 +93,24 @@ function App() {
           return existing ? { ...n, x: existing.x, y: existing.y } : n;
         });
 
-        if (!initialLayoutDone.current || (hasNewNodes && nodes.some((n) => n.x === 0 && n.y === 0))) {
+        if (!initialLayoutDone.current) {
+          // First load — do a full layout
           nodes = forceLayout(nodes, data.connections, 800, 600);
           initialLayoutDone.current = true;
+        } else if (hasNewNodes) {
+          // New nodes added — give them a position near existing nodes without resetting others
+          const existingNodes = nodes.filter((n) => posMap.has(n.id));
+          const avgX = existingNodes.length > 0
+            ? existingNodes.reduce((s, n) => s + n.x, 0) / existingNodes.length
+            : 400;
+          const avgY = existingNodes.length > 0
+            ? existingNodes.reduce((s, n) => s + n.y, 0) / existingNodes.length
+            : 300;
+          nodes = nodes.map((n) =>
+            n.x === 0 && n.y === 0 && !posMap.has(n.id)
+              ? { ...n, x: avgX + (Math.random() - 0.5) * 200, y: avgY + (Math.random() - 0.5) * 150 }
+              : n
+          );
         }
 
         return { nodes, connections: data.connections };
@@ -100,6 +119,7 @@ function App() {
   }, [yaml]);
 
   const setYaml = useCallback((newYaml: string) => {
+    console.log("[App] YAML updated, length:", newYaml.length);
     setDiagrams((prev) =>
       prev.map((d) =>
         d.id === activeId ? { ...d, yaml: newYaml, lastModified: Date.now() } : d
@@ -107,13 +127,23 @@ function App() {
     );
   }, [activeId]);
 
+  const setNotes = useCallback((newNotes: string) => {
+    setDiagrams((prev) =>
+      prev.map((d) =>
+        d.id === activeId ? { ...d, notes: newNotes, lastModified: Date.now() } : d
+      )
+    );
+  }, [activeId]);
+
   const handleNewDiagram = useCallback(() => {
     const id = newId();
-    const name = `Diagram ${diagrams.length + 1}`;
-    setDiagrams((prev) => [...prev, { id, name, yaml: DEFAULT_YAML, lastModified: Date.now() }]);
+    setDiagrams((prev) => {
+      const name = `Diagram ${prev.length + 1}`;
+      return [...prev, { id, name, yaml: DEFAULT_YAML, notes: '', lastModified: Date.now() }];
+    });
     setActiveId(id);
     initialLayoutDone.current = false;
-  }, [diagrams.length]);
+  }, []);
 
   const handleDeleteDiagram = useCallback((id: string) => {
     setDiagrams((prev) => {
@@ -130,18 +160,48 @@ function App() {
     initialLayoutDone.current = false;
   }, []);
 
+  const [renamingTabId, setRenamingTabId] = useState<string | null>(null);
+  const [renameValue, setRenameValue] = useState('');
+
+  const handleStartRename = useCallback((id: string, currentName: string) => {
+    setRenamingTabId(id);
+    setRenameValue(currentName);
+  }, []);
+
+  const handleFinishRename = useCallback(() => {
+    if (renamingTabId && renameValue.trim()) {
+      setDiagrams((prev) =>
+        prev.map((d) =>
+          d.id === renamingTabId ? { ...d, name: renameValue.trim() } : d
+        )
+      );
+    }
+    setRenamingTabId(null);
+  }, [renamingTabId, renameValue]);
+
   const handleNodeMove = useCallback((id: string, x: number, y: number) => {
+    console.log("[App] Node moved:", id, x.toFixed(0), y.toFixed(0));
     setDiagram((prev) => ({
       ...prev,
       nodes: prev.nodes.map((n) => (n.id === id ? { ...n, x, y } : n)),
     }));
   }, []);
 
-  const handleAutoLayout = useCallback((mode: 'grid' | 'force') => {
+  const handleAutoLayout = useCallback((mode: 'grid' | 'force' | 'tiered') => {
     setDiagram((prev) => {
-      const nodes = mode === 'grid'
-        ? gridLayout(prev.nodes, 800)
-        : forceLayout(prev.nodes, prev.connections, 800, 600);
+      let nodes: typeof prev.nodes;
+      switch (mode) {
+        case 'grid':
+          nodes = gridLayout(prev.nodes, 800);
+          break;
+        case 'tiered':
+          nodes = tieredLayout(prev.nodes, 800);
+          break;
+        case 'force':
+        default:
+          nodes = forceLayout(prev.nodes, prev.connections, 800, 600);
+          break;
+      }
       return { ...prev, nodes };
     });
   }, []);
@@ -164,7 +224,6 @@ function App() {
       const trimmed = lines[i].trim();
       if (trimmed.match(new RegExp(`^-?\\s*id:\\s*${nodeId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*$`))) {
         // Found the id line, now find the block boundaries
-        const start = lines[i].startsWith('  -') || lines[i].startsWith('  - ') ? i : Math.max(0, i);
         // Walk backward to find the "- id:" start if id is not on the dash line
         let blockStart = i;
         for (let j = i - 1; j >= 0; j--) {
@@ -217,14 +276,79 @@ function App() {
   }, [yaml]);
 
   const handleNodeClick = useCallback((id: string) => {
+    console.log("[App] Node clicked:", id);
     const range = findNodeLines(id);
     setHighlightLines(range);
   }, [findNodeLines]);
 
   const handleConnectionClick = useCallback((from: string, to: string) => {
+    console.log("[App] Connection clicked:", from, "→", to);
     const range = findConnectionLines(from, to);
     setHighlightLines(range);
   }, [findConnectionLines]);
+
+  const handleAddNode = useCallback((type: NodeType) => {
+    const lines = yaml.split('\n');
+    // Find the "connections:" line
+    let connectionsIdx = -1;
+    for (let i = 0; i < lines.length; i++) {
+      if (lines[i].trim() === 'connections:') {
+        connectionsIdx = i;
+        break;
+      }
+    }
+    const newId = `${type}${Date.now().toString(36).slice(-4)}`;
+    const nodeLines = [
+      `  - id: ${newId}`,
+      `    label: New ${type}`,
+      `    type: ${type}`,
+    ];
+
+    if (connectionsIdx >= 0) {
+      // Insert before connections: with a blank line separator
+      // Check if there's already a blank line before connections:
+      const hasBlankBefore = connectionsIdx > 0 && lines[connectionsIdx - 1].trim() === '';
+      const insertAt = hasBlankBefore ? connectionsIdx - 1 : connectionsIdx;
+      const toInsert = hasBlankBefore
+        ? [...nodeLines, '']
+        : ['', ...nodeLines, ''];
+      lines.splice(insertAt, 0, ...toInsert);
+    } else {
+      // No connections section — just append
+      lines.push('', ...nodeLines);
+    }
+
+    const newYaml = lines.join('\n');
+    setYaml(newYaml);
+    // Flash the new lines
+    const newLines = newYaml.split('\n');
+    const startLine = newLines.findIndex(l => l.includes(`id: ${newId}`));
+    if (startLine >= 0) {
+      setFlashLines({ start: startLine, end: startLine + 2 });
+    }
+  }, [yaml, setYaml]);
+
+  const handleAddConnection = useCallback((type: ConnectionType) => {
+    const lines = yaml.split('\n');
+    // Remove trailing empty lines
+    while (lines.length > 0 && lines[lines.length - 1].trim() === '') {
+      lines.pop();
+    }
+    // Add blank line separator + new connection entry
+    const insertStart = lines.length + 1; // after the blank line
+    const connLines = [
+      '',
+      `  - from: source`,
+      `    to: target`,
+      `    label: connection`,
+      `    type: ${type}`,
+    ];
+    lines.push(...connLines, '');
+    const newYaml = lines.join('\n');
+    setYaml(newYaml);
+    // Flash the newly added lines (skip the blank line, flash the 4 content lines)
+    setFlashLines({ start: insertStart, end: insertStart + 3 });
+  }, [yaml, setYaml]);
 
   return (
     <div className={`app-container theme-${theme}`}>
@@ -244,9 +368,25 @@ function App() {
             key={d.id}
             className={`tab ${d.id === activeId ? 'tab-active' : ''}`}
             onClick={() => handleSelectTab(d.id)}
+            onDoubleClick={(e) => { e.stopPropagation(); handleStartRename(d.id, d.name); }}
           >
-            <span className="tab-name">{d.name}</span>
-            {diagrams.length > 1 && (
+            {renamingTabId === d.id ? (
+              <input
+                className="tab-rename-input"
+                value={renameValue}
+                onChange={(e) => setRenameValue(e.target.value)}
+                onBlur={handleFinishRename}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') handleFinishRename();
+                  if (e.key === 'Escape') setRenamingTabId(null);
+                }}
+                onClick={(e) => e.stopPropagation()}
+                autoFocus
+              />
+            ) : (
+              <span className="tab-name">{d.name}</span>
+            )}
+            {diagrams.length > 1 && renamingTabId !== d.id && (
               <button
                 className="tab-close"
                 onClick={(e) => { e.stopPropagation(); handleDeleteDiagram(d.id); }}
@@ -262,7 +402,7 @@ function App() {
         </button>
       </div>
       <main className="app-main">
-        <YamlEditor value={yaml} onChange={setYaml} error={parseError} highlightLines={highlightLines} />
+        <YamlEditor value={yaml} onChange={setYaml} error={parseError} highlightLines={highlightLines} flashLines={flashLines} onAddNode={handleAddNode} onAddConnection={handleAddConnection} notes={notes} onNotesChange={setNotes} activeEditorTab={editorTab} onEditorTabChange={setEditorTab} />
         <DiagramCanvas data={diagram} theme={theme} onNodeMove={handleNodeMove} onNodeClick={handleNodeClick} onConnectionClick={handleConnectionClick} svgRef={svgRef} />
       </main>
       {copyFeedback && <div className="copy-toast">📋 YAML copied to clipboard!</div>}

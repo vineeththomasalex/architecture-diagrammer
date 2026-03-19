@@ -76,6 +76,21 @@
   text-overflow: ellipsis;
 }
 
+.tab-rename-input {
+  background: #0f0f1a;
+  border: 1px solid #5a5a8a;
+  color: #e0e0e0;
+  font-size: 12px;
+  padding: 2px 6px;
+  border-radius: 3px;
+  width: 120px;
+  outline: none;
+}
+
+.tab-rename-input:focus {
+  border-color: #8b8bff;
+}
+
 .tab-close {
   background: none;
   border: none;
@@ -124,6 +139,83 @@
   letter-spacing: 1px;
   color: #8888aa;
   border-bottom: 1px solid #2a2a3e;
+}
+
+/* ---- Editor Tabs (YAML / Notes) ---- */
+.editor-tabs {
+  display: flex;
+  border-bottom: 1px solid #2a2a3e;
+  flex-shrink: 0;
+}
+
+.editor-tab {
+  flex: 1;
+  padding: 8px 14px;
+  background: transparent;
+  border: none;
+  color: #6a6a8a;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+  border-bottom: 2px solid transparent;
+}
+
+.editor-tab:hover {
+  color: #b0b0c8;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.editor-tab-active {
+  color: #e0e0e0;
+  border-bottom-color: #5a5a8a;
+}
+
+/* ---- Notes ---- */
+.notes-body {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.notes-editor {
+  flex: 1;
+  padding: 14px;
+  color: #c8d6e5;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-size: 13px;
+  line-height: 1.7;
+  outline: none;
+  overflow-y: auto;
+  word-wrap: break-word;
+}
+
+.notes-editor:empty::before {
+  content: attr(data-placeholder);
+  color: #4a4a6a;
+  pointer-events: none;
+}
+
+.notes-editor b, .notes-editor strong {
+  color: #e8e8f0;
+}
+
+.notes-editor i, .notes-editor em {
+  color: #a0b0c8;
+}
+
+.notes-editor u {
+  text-decoration-color: #5a5a8a;
+}
+
+.notes-editor ul, .notes-editor ol {
+  margin: 4px 0;
+  padding-left: 24px;
+}
+
+.notes-editor li {
+  margin: 2px 0;
 }
 
 /* ---- Syntax Highlighted Editor ---- */
@@ -243,6 +335,12 @@
   gap: 3px 8px;
 }
 
+.reference-tier-divider {
+  height: 1px;
+  background: #2a2a3e;
+  margin: 5px 0;
+}
+
 .reference-item {
   display: flex;
   align-items: center;
@@ -250,6 +348,24 @@
   font-size: 11px;
   color: #b0b0c8;
   padding: 1px 0;
+}
+
+.reference-item-clickable {
+  cursor: pointer;
+  border-radius: 4px;
+  padding: 2px 4px;
+  transition: background 0.15s;
+}
+
+.reference-item-clickable:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.reference-hint {
+  font-size: 9px;
+  color: #5a5a7a;
+  font-weight: 400;
+  font-style: italic;
 }
 
 .reference-dot {
@@ -388,4 +504,17 @@
 @keyframes toast-in {
   from { opacity: 0; transform: translateY(10px); }
   to   { opacity: 1; transform: translateY(0); }
+}
+
+/* ---- YAML Flash Highlight ---- */
+.yaml-flash {
+  background: rgba(139, 92, 246, 0.3);
+  border-radius: 2px;
+  animation: yaml-flash-fade 1.2s ease-out forwards;
+}
+
+@keyframes yaml-flash-fade {
+  0% { background: rgba(139, 92, 246, 0.4); }
+  70% { background: rgba(139, 92, 246, 0.15); }
+  100% { background: transparent; }
 }

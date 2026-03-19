@@ -77,6 +77,7 @@ const DiagramCanvas: React.FC<Props> = ({ data, theme, onNodeMove, onNodeClick, 
 
   // Middle-mouse pan on the canvas background
   const handleCanvasMouseDown = useCallback((e: React.MouseEvent) => {
+    console.log("[Canvas] Mouse down, button:", e.button);
     if (e.button !== 1) return; // Middle mouse only
     e.preventDefault();
     panState.current = {
@@ -90,10 +91,7 @@ const DiagramCanvas: React.FC<Props> = ({ data, theme, onNodeMove, onNodeClick, 
     const svg = svgRef.current;
     if (!svg) return;
 
-    // Compute scale: how many SVG units per screen pixel
-    const ctm = svg.getScreenCTM();
-    const scaleX = ctm ? viewBox.w / (ctm.a * svg.clientWidth / ctm.a) : 1;
-    const scaleY = ctm ? viewBox.h / (ctm.d * svg.clientHeight / ctm.d) : 1;
+    // Compute scale: SVG units per screen pixel
     const pixelToSvgX = viewBox.w / svg.clientWidth;
     const pixelToSvgY = viewBox.h / svg.clientHeight;
 
@@ -121,6 +119,7 @@ const DiagramCanvas: React.FC<Props> = ({ data, theme, onNodeMove, onNodeClick, 
 
   // Scroll to zoom
   const handleWheel = useCallback((e: React.WheelEvent) => {
+    console.log("[Canvas] Wheel zoom, delta:", e.deltaY > 0 ? "out" : "in");
     e.preventDefault();
     const svg = svgRef.current;
     if (!svg) return;

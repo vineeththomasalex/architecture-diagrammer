@@ -41,7 +41,7 @@ const DiagramConnection: React.FC<Props> = ({ connection, nodes, textColor, onCl
   const markerId = `arrowhead-${connType}`;
 
   return (
-    <g className="diagram-connection" onClick={() => onClick?.(connection.from, connection.to)} style={{ cursor: onClick ? 'pointer' : 'default' }}>
+    <g className="diagram-connection" onDoubleClick={() => { console.log("[Connection] Double-clicked:", connection.from, "→", connection.to); onClick?.(connection.from, connection.to); }} style={{ cursor: onClick ? 'pointer' : 'default' }}>
       <defs>
         <marker
           id={markerId}

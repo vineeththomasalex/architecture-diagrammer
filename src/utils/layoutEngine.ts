@@ -1,4 +1,4 @@
-import type { DiagramNode, DiagramConnection } from '../types/diagram';
+import type { DiagramNode, DiagramConnection, NodeType } from '../types/diagram';
 import { NODE_WIDTH, NODE_HEIGHT } from '../types/diagram';
 
 const PADDING = 60;
@@ -95,4 +95,50 @@ export function forceLayout(
   }
 
   return positioned.map(({ vx: _, vy: __, ...rest }) => rest);
+}
+
+/** Tier mapping: each node type → a logical tier (top to bottom) */
+const TIER_MAP: Record<NodeType, number> = {
+  client: 0, cdn: 0, dns: 0, external: 0,
+  loadbalancer: 1, gateway: 1, firewall: 1,
+  service: 2, worker: 2, scheduler: 2, cache: 2,
+  queue: 3, stream: 3, notification: 3,
+  search: 4, analytics: 4, ml: 4,
+  database: 5, nosql: 5, storage: 5,
+};
+
+const TIER_GAP = 110;
+
+/** Arrange nodes in logical architecture tiers (top to bottom) */
+export function tieredLayout(nodes: DiagramNode[], canvasWidth: number): DiagramNode[] {
+  if (nodes.length === 0) return [];
+
+  // Group nodes by tier
+  const tiers = new Map<number, DiagramNode[]>();
+  for (const node of nodes) {
+    const tier = TIER_MAP[node.type] ?? 2;
+    if (!tiers.has(tier)) tiers.set(tier, []);
+    tiers.get(tier)!.push(node);
+  }
+
+  // Sort tiers by tier number, filter empty
+  const activeTiers = [...tiers.entries()].sort((a, b) => a[0] - b[0]);
+
+  const result: DiagramNode[] = [];
+
+  activeTiers.forEach(([, tierNodes], tierIdx) => {
+    const tierY = PADDING + tierIdx * (NODE_HEIGHT + TIER_GAP);
+    const totalWidth = tierNodes.length * NODE_WIDTH + (tierNodes.length - 1) * H_GAP;
+    const startX = Math.max(PADDING, (canvasWidth - totalWidth) / 2);
+
+    tierNodes.forEach((node, i) => {
+      result.push({
+        ...node,
+        x: startX + i * (NODE_WIDTH + H_GAP),
+        y: tierY,
+      });
+    });
+  });
+
+  return result;
 }
