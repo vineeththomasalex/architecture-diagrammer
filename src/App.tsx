@@ -9,6 +9,12 @@ import type { DiagramData, Theme, NodeType, ConnectionType } from './types/diagr
 import { DEFAULT_YAML } from './types/diagram';
 import './App.css';
 
+interface StrokeData {
+  points: number[][];
+  color: string;
+  size: number;
+}
+
 interface SavedDiagram {
   id: string;
   name: string;
@@ -16,7 +22,7 @@ interface SavedDiagram {
   notes: string;
   lastModified: number;
   positions?: Record<string, { x: number; y: number }>;
-  drawingData?: string;
+  strokes?: StrokeData[];
 }
 
 const STORAGE_KEY = 'sysdesign-diagrams';
@@ -55,6 +61,7 @@ function App() {
   const activeDiagram = diagrams.find((d) => d.id === activeId) || diagrams[0];
   const yaml = activeDiagram.yaml;
   const notes = activeDiagram.notes || '';
+  const strokes = activeDiagram.strokes || [];
 
   const [diagram, setDiagram] = useState<DiagramData>({ nodes: [], connections: [] });
   const [parseError, setParseError] = useState<string | null>(null);
@@ -65,7 +72,6 @@ function App() {
   const [editorTab, setEditorTab] = useState<'yaml' | 'notes'>('yaml');
   const [drawMode, setDrawMode] = useState<'none' | 'pencil' | 'eraser'>('none');
   const svgRef = useRef<SVGSVGElement | null>(null);
-  const drawCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const initialLayoutDone = useRef(false);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -73,27 +79,6 @@ function App() {
   useEffect(() => {
     localStorage.setItem(ACTIVE_KEY, activeId);
   }, [activeId]);
-
-  // Restore drawing when switching diagrams
-  useEffect(() => {
-    const canvas = drawCanvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-    // Reset composite mode and clear
-    ctx.globalCompositeOperation = 'source-over';
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    // Restore saved drawing if any
-    const savedDrawing = activeDiagram.drawingData;
-    if (savedDrawing) {
-      const img = new Image();
-      img.onload = () => {
-        ctx.globalCompositeOperation = 'source-over';
-        ctx.drawImage(img, 0, 0);
-      };
-      img.src = savedDrawing;
-    }
-  }, [activeId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Debounced auto-save
   useEffect(() => {
@@ -193,9 +178,8 @@ function App() {
   const saveCurrentDiagramState = useCallback(() => {
     const positions: Record<string, { x: number; y: number }> = {};
     diagram.nodes.forEach(n => { positions[n.id] = { x: n.x, y: n.y }; });
-    const drawingData = drawCanvasRef.current?.toDataURL() || undefined;
     setDiagrams(prev => prev.map(d =>
-      d.id === activeId ? { ...d, positions, drawingData } : d
+      d.id === activeId ? { ...d, positions } : d
     ));
   }, [activeId, diagram.nodes]);
 
@@ -465,14 +449,9 @@ function App() {
           <button
             className="draw-btn"
             onClick={() => {
-              const canvas = drawCanvasRef.current;
-              if (canvas) {
-                const ctx = canvas.getContext('2d');
-                if (ctx) {
-                  ctx.globalCompositeOperation = 'source-over';
-                  ctx.clearRect(0, 0, canvas.width, canvas.height);
-                }
-              }
+              setDiagrams(prev => prev.map(d =>
+                d.id === activeId ? { ...d, strokes: [] } : d
+              ));
             }}
             title="Clear all drawings"
           >
@@ -482,7 +461,22 @@ function App() {
       </div>
       <main className="app-main">
         <YamlEditor value={yaml} onChange={setYaml} error={parseError} highlightLines={highlightLines} flashLines={flashLines} onAddNode={handleAddNode} onAddConnection={handleAddConnection} notes={notes} onNotesChange={setNotes} activeEditorTab={editorTab} onEditorTabChange={setEditorTab} />
-        <DiagramCanvas data={diagram} theme={theme} onNodeMove={handleNodeMove} onNodeClick={handleNodeClick} onConnectionClick={handleConnectionClick} svgRef={svgRef} drawMode={drawMode} drawCanvasRef={drawCanvasRef} activeDiagramId={activeId} />
+        <DiagramCanvas
+          data={diagram}
+          theme={theme}
+          onNodeMove={handleNodeMove}
+          onNodeClick={handleNodeClick}
+          onConnectionClick={handleConnectionClick}
+          svgRef={svgRef}
+          drawMode={drawMode}
+          activeDiagramId={activeId}
+          strokes={strokes}
+          onStrokesChange={(newStrokes) => {
+            setDiagrams(prev => prev.map(d =>
+              d.id === activeId ? { ...d, strokes: newStrokes } : d
+            ));
+          }}
+        />
       </main>
       {copyFeedback && <div className="copy-toast">📋 YAML copied to clipboard!</div>}
     </div>
