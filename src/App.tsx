@@ -462,6 +462,22 @@ function App() {
           >
             🧹
           </button>
+          <button
+            className="draw-btn"
+            onClick={() => {
+              const canvas = drawCanvasRef.current;
+              if (canvas) {
+                const ctx = canvas.getContext('2d');
+                if (ctx) {
+                  ctx.globalCompositeOperation = 'source-over';
+                  ctx.clearRect(0, 0, canvas.width, canvas.height);
+                }
+              }
+            }}
+            title="Clear all drawings"
+          >
+            🗑️
+          </button>
         </div>
       </div>
       <main className="app-main">
