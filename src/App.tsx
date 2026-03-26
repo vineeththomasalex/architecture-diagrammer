@@ -15,6 +15,8 @@ interface SavedDiagram {
   yaml: string;
   notes: string;
   lastModified: number;
+  positions?: Record<string, { x: number; y: number }>;
+  drawingData?: string;
 }
 
 const STORAGE_KEY = 'sysdesign-diagrams';
@@ -61,7 +63,9 @@ function App() {
   const [highlightLines, setHighlightLines] = useState<{ start: number; end: number } | null>(null);
   const [flashLines, setFlashLines] = useState<{ start: number; end: number } | null>(null);
   const [editorTab, setEditorTab] = useState<'yaml' | 'notes'>('yaml');
+  const [drawMode, setDrawMode] = useState<'none' | 'pencil' | 'eraser'>('none');
   const svgRef = useRef<SVGSVGElement | null>(null);
+  const drawCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const initialLayoutDone = useRef(false);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -69,6 +73,27 @@ function App() {
   useEffect(() => {
     localStorage.setItem(ACTIVE_KEY, activeId);
   }, [activeId]);
+
+  // Restore drawing when switching diagrams
+  useEffect(() => {
+    const canvas = drawCanvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    // Reset composite mode and clear
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    // Restore saved drawing if any
+    const savedDrawing = activeDiagram.drawingData;
+    if (savedDrawing) {
+      const img = new Image();
+      img.onload = () => {
+        ctx.globalCompositeOperation = 'source-over';
+        ctx.drawImage(img, 0, 0);
+      };
+      img.src = savedDrawing;
+    }
+  }, [activeId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Debounced auto-save
   useEffect(() => {
@@ -85,7 +110,13 @@ function App() {
     setParseError(error);
     if (data) {
       setDiagram((prev) => {
-        const posMap = new Map(prev.nodes.map((n) => [n.id, { x: n.x, y: n.y }]));
+        // Use saved positions from the diagram if available (tab switch), else from prev state
+        const savedPositions = activeDiagram.positions || {};
+        const posMap = new Map<string, { x: number; y: number }>();
+        // Prefer saved positions (from tab switch), then current state
+        prev.nodes.forEach(n => posMap.set(n.id, { x: n.x, y: n.y }));
+        Object.entries(savedPositions).forEach(([id, pos]) => posMap.set(id, pos));
+
         const hasNewNodes = data.nodes.some((n) => !posMap.has(n.id));
 
         let nodes = data.nodes.map((n) => {
@@ -94,11 +125,14 @@ function App() {
         });
 
         if (!initialLayoutDone.current) {
-          // First load — do a full layout
-          nodes = forceLayout(nodes, data.connections, 800, 600);
+          // First load or tab switch — use saved positions if we have them, otherwise do layout
+          if (Object.keys(savedPositions).length > 0) {
+            // We already applied saved positions above
+          } else {
+            nodes = forceLayout(nodes, data.connections, 800, 600);
+          }
           initialLayoutDone.current = true;
         } else if (hasNewNodes) {
-          // New nodes added — give them a position near existing nodes without resetting others
           const existingNodes = nodes.filter((n) => posMap.has(n.id));
           const avgX = existingNodes.length > 0
             ? existingNodes.reduce((s, n) => s + n.x, 0) / existingNodes.length
@@ -155,10 +189,22 @@ function App() {
     initialLayoutDone.current = false;
   }, [activeId]);
 
+  // Save current diagram's positions and drawing before switching
+  const saveCurrentDiagramState = useCallback(() => {
+    const positions: Record<string, { x: number; y: number }> = {};
+    diagram.nodes.forEach(n => { positions[n.id] = { x: n.x, y: n.y }; });
+    const drawingData = drawCanvasRef.current?.toDataURL() || undefined;
+    setDiagrams(prev => prev.map(d =>
+      d.id === activeId ? { ...d, positions, drawingData } : d
+    ));
+  }, [activeId, diagram.nodes]);
+
   const handleSelectTab = useCallback((id: string) => {
+    if (id === activeId) return;
+    saveCurrentDiagramState();
     setActiveId(id);
     initialLayoutDone.current = false;
-  }, []);
+  }, [activeId, saveCurrentDiagramState]);
 
   const [renamingTabId, setRenamingTabId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState('');
@@ -400,10 +446,27 @@ function App() {
         <button className="tab-add" onClick={handleNewDiagram} title="New diagram">
           +
         </button>
+        <div className="tab-bar-spacer" />
+        <div className="draw-tools">
+          <button
+            className={`draw-btn ${drawMode === 'pencil' ? 'draw-btn-active' : ''}`}
+            onClick={() => setDrawMode(drawMode === 'pencil' ? 'none' : 'pencil')}
+            title="Draw (pencil)"
+          >
+            ✏️
+          </button>
+          <button
+            className={`draw-btn ${drawMode === 'eraser' ? 'draw-btn-active' : ''}`}
+            onClick={() => setDrawMode(drawMode === 'eraser' ? 'none' : 'eraser')}
+            title="Erase drawing"
+          >
+            🧹
+          </button>
+        </div>
       </div>
       <main className="app-main">
         <YamlEditor value={yaml} onChange={setYaml} error={parseError} highlightLines={highlightLines} flashLines={flashLines} onAddNode={handleAddNode} onAddConnection={handleAddConnection} notes={notes} onNotesChange={setNotes} activeEditorTab={editorTab} onEditorTabChange={setEditorTab} />
-        <DiagramCanvas data={diagram} theme={theme} onNodeMove={handleNodeMove} onNodeClick={handleNodeClick} onConnectionClick={handleConnectionClick} svgRef={svgRef} />
+        <DiagramCanvas data={diagram} theme={theme} onNodeMove={handleNodeMove} onNodeClick={handleNodeClick} onConnectionClick={handleConnectionClick} svgRef={svgRef} drawMode={drawMode} drawCanvasRef={drawCanvasRef} activeDiagramId={activeId} />
       </main>
       {copyFeedback && <div className="copy-toast">📋 YAML copied to clipboard!</div>}
     </div>
