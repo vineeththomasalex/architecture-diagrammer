@@ -4,7 +4,7 @@ import type { Theme } from '../types/diagram';
 interface Props {
   theme: Theme;
   onThemeChange: (theme: Theme) => void;
-  onAutoLayout: (mode: 'grid' | 'force' | 'tiered') => void;
+  onAutoLayout: (mode: 'grid' | 'tiered') => void;
   onExportSvg: () => void;
   onCopyYaml: () => void;
 }
@@ -32,9 +32,6 @@ const Toolbar: React.FC<Props> = ({ theme, onThemeChange, onAutoLayout, onExport
         </button>
         <button className="toolbar-btn" onClick={() => onAutoLayout('tiered')} title="Tiered architecture layout">
           🏗️ Tiered
-        </button>
-        <button className="toolbar-btn" onClick={() => onAutoLayout('force')} title="Force-directed layout">
-          ✦ Force
         </button>
       </div>
 

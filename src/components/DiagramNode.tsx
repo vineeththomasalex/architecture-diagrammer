@@ -6,6 +6,7 @@ interface Props {
   onDragStart: (id: string, e: React.MouseEvent) => void;
   onClick?: (id: string) => void;
   textColor: string;
+  interactive?: boolean;
 }
 
 const W = NODE_WIDTH;
@@ -128,19 +129,20 @@ function getNodeShape(type: NodeType, color: string): React.ReactElement {
   }
 }
 
-const DiagramNodeComponent: React.FC<Props> = ({ node, onDragStart, onClick, textColor }) => {
+const DiagramNodeComponent: React.FC<Props> = ({ node, onDragStart, onClick, textColor, interactive = true }) => {
   const color = NODE_COLORS[node.type];
   const icon = NODE_ICONS[node.type];
   const isExternal = node.type === 'external';
   const labelColor = isExternal ? textColor : '#fff';
 
   const handleMouseDown = (e: React.MouseEvent) => {
+    if (!interactive) return;
     onDragStart(node.id, e);
   };
 
   const handleDoubleClick = (e: React.MouseEvent) => {
+    if (!interactive) return;
     e.preventDefault();
-    console.log("[Node] Double-clicked:", node.id);
     if (onClick) onClick(node.id);
   };
 
@@ -149,7 +151,7 @@ const DiagramNodeComponent: React.FC<Props> = ({ node, onDragStart, onClick, tex
       transform={`translate(${node.x}, ${node.y})`}
       onMouseDown={handleMouseDown}
       onDoubleClick={handleDoubleClick}
-      style={{ cursor: 'grab' }}
+      style={{ cursor: interactive ? 'grab' : 'inherit', pointerEvents: interactive ? 'auto' : 'none' }}
       className="diagram-node"
     >
       {getNodeShape(node.type, color)}

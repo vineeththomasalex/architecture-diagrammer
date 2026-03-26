@@ -114,162 +114,35 @@ export const THEME_STYLES: Record<Theme, { bg: string; surface: string; text: st
 export const DEFAULT_YAML = `nodes:
 
   - id: client
-    label: Client Apps
+    label: Web Client
     type: client
 
-  - id: cdn
-    label: CDN
-    type: cdn
-
-  - id: dns
-    label: DNS
-    type: dns
-
-  - id: lb
-    label: Load Balancer
-    type: loadbalancer
-
-  - id: gateway
-    label: API Gateway
-    type: gateway
-
-  - id: auth
-    label: Auth Service
+  - id: api
+    label: API Server
     type: service
 
-  - id: catalog
-    label: Catalog Service
-    type: service
-
-  - id: streaming
-    label: Streaming Service
-    type: service
-
-  - id: recommend
-    label: Recommendation Engine
-    type: service
-
-  - id: transcode
-    label: Transcoding Worker
-    type: worker
-
-  - id: userdb
-    label: User DB
+  - id: db
+    label: PostgreSQL
     type: database
 
-  - id: contentdb
-    label: Content Metadata
-    type: nosql
-
-  - id: videostorage
-    label: Video Storage
-    type: storage
-
-  - id: rediscache
+  - id: cache
     label: Redis Cache
     type: cache
-
-  - id: kafka
-    label: Event Bus
-    type: stream
-
-  - id: search
-    label: Search Engine
-    type: search
-
-  - id: notif
-    label: Notifications
-    type: notification
 
 connections:
 
   - from: client
-    to: dns
-    label: DNS Lookup
+    to: api
+    label: REST API
     type: sync
 
-  - from: client
-    to: cdn
-    label: Video Stream
-    type: stream
-
-  - from: client
-    to: lb
-    label: API Requests
+  - from: api
+    to: cache
+    label: Cache Lookup
     type: sync
 
-  - from: lb
-    to: gateway
-    label: Route
-    type: sync
-
-  - from: gateway
-    to: auth
-    label: Auth Check
-    type: sync
-
-  - from: gateway
-    to: catalog
-    label: Browse
-    type: sync
-
-  - from: gateway
-    to: streaming
-    label: Play
-    type: sync
-
-  - from: gateway
-    to: search
-    label: Search
-    type: sync
-
-  - from: catalog
-    to: contentdb
-    label: Query
-    type: sync
-
-  - from: catalog
-    to: rediscache
-    label: Cache
-    type: sync
-
-  - from: auth
-    to: userdb
-    label: User Data
-    type: sync
-
-  - from: streaming
-    to: videostorage
-    label: Fetch Video
-    type: stream
-
-  - from: streaming
-    to: cdn
-    label: Populate CDN
-    type: async
-
-  - from: transcode
-    to: videostorage
-    label: Upload
-    type: async
-
-  - from: kafka
-    to: transcode
-    label: Transcode Jobs
-    type: pubsub
-
-  - from: kafka
-    to: recommend
-    label: Watch Events
-    type: pubsub
-
-  - from: kafka
-    to: notif
-    label: Notifications
-    type: pubsub
-
-  - from: recommend
-    to: contentdb
-    label: ML Features
+  - from: api
+    to: db
+    label: SQL Queries
     type: sync
 `;

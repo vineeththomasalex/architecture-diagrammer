@@ -3,7 +3,7 @@ import YamlEditor from './components/YamlEditor';
 import DiagramCanvas from './components/DiagramCanvas';
 import Toolbar from './components/Toolbar';
 import { parseYaml } from './utils/yamlParser';
-import { gridLayout, forceLayout, tieredLayout } from './utils/layoutEngine';
+import { gridLayout, tieredLayout } from './utils/layoutEngine';
 import { exportSvgToFile, copyYamlToClipboard } from './utils/exportSvg';
 import type { DiagramData, Theme, NodeType, ConnectionType } from './types/diagram';
 import { DEFAULT_YAML } from './types/diagram';
@@ -48,7 +48,7 @@ function App() {
   const [diagrams, setDiagrams] = useState<SavedDiagram[]>(() => {
     const saved = loadDiagrams();
     if (saved.length > 0) return saved;
-    return [{ id: newId(), name: 'Netflix Design', yaml: DEFAULT_YAML, notes: '', lastModified: Date.now() }];
+    return [{ id: newId(), name: 'My Design', yaml: DEFAULT_YAML, notes: '', lastModified: Date.now() }];
   });
 
   const [activeId, setActiveId] = useState<string>(() => {
@@ -70,7 +70,8 @@ function App() {
   const [highlightLines, setHighlightLines] = useState<{ start: number; end: number } | null>(null);
   const [flashLines, setFlashLines] = useState<{ start: number; end: number } | null>(null);
   const [editorTab, setEditorTab] = useState<'yaml' | 'notes'>('yaml');
-  const [drawMode, setDrawMode] = useState<'none' | 'pencil' | 'eraser'>('none');
+  const [drawMode, setDrawMode] = useState<'none' | 'pencil' | 'eraser' | 'laser'>('none');
+  const [penColor, setPenColor] = useState('#e0e0e0');
   const svgRef = useRef<SVGSVGElement | null>(null);
   const initialLayoutDone = useRef(false);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -89,6 +90,16 @@ function App() {
     return () => { if (saveTimer.current) clearTimeout(saveTimer.current); };
   }, [diagrams]);
 
+  // Sync node positions back to the diagram record so they persist
+  useEffect(() => {
+    if (diagram.nodes.length === 0) return;
+    const positions: Record<string, { x: number; y: number }> = {};
+    diagram.nodes.forEach(n => { positions[n.id] = { x: n.x, y: n.y }; });
+    setDiagrams(prev => prev.map(d =>
+      d.id === activeId ? { ...d, positions } : d
+    ));
+  }, [diagram.nodes]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Parse YAML whenever it changes
   useEffect(() => {
     const { data, error } = parseYaml(yaml);
@@ -98,8 +109,12 @@ function App() {
         // Use saved positions from the diagram if available (tab switch), else from prev state
         const savedPositions = activeDiagram.positions || {};
         const posMap = new Map<string, { x: number; y: number }>();
-        // Prefer saved positions (from tab switch), then current state
-        prev.nodes.forEach(n => posMap.set(n.id, { x: n.x, y: n.y }));
+
+        if (initialLayoutDone.current) {
+          // Normal editing — preserve current positions
+          prev.nodes.forEach(n => posMap.set(n.id, { x: n.x, y: n.y }));
+        }
+        // Overlay saved positions (from tab switch)
         Object.entries(savedPositions).forEach(([id, pos]) => posMap.set(id, pos));
 
         const hasNewNodes = data.nodes.some((n) => !posMap.has(n.id));
@@ -114,7 +129,7 @@ function App() {
           if (Object.keys(savedPositions).length > 0) {
             // We already applied saved positions above
           } else {
-            nodes = forceLayout(nodes, data.connections, 800, 600);
+            nodes = tieredLayout(nodes, 800);
           }
           initialLayoutDone.current = true;
         } else if (hasNewNodes) {
@@ -217,7 +232,7 @@ function App() {
     }));
   }, []);
 
-  const handleAutoLayout = useCallback((mode: 'grid' | 'force' | 'tiered') => {
+  const handleAutoLayout = useCallback((mode: 'grid' | 'tiered') => {
     setDiagram((prev) => {
       let nodes: typeof prev.nodes;
       switch (mode) {
@@ -225,11 +240,8 @@ function App() {
           nodes = gridLayout(prev.nodes, 800);
           break;
         case 'tiered':
-          nodes = tieredLayout(prev.nodes, 800);
-          break;
-        case 'force':
         default:
-          nodes = forceLayout(prev.nodes, prev.connections, 800, 600);
+          nodes = tieredLayout(prev.nodes, 800);
           break;
       }
       return { ...prev, nodes };
@@ -433,12 +445,39 @@ function App() {
         <div className="tab-bar-spacer" />
         <div className="draw-tools">
           <button
-            className={`draw-btn ${drawMode === 'pencil' ? 'draw-btn-active' : ''}`}
-            onClick={() => setDrawMode(drawMode === 'pencil' ? 'none' : 'pencil')}
-            title="Draw (pencil)"
+            className={`draw-btn ${drawMode === 'laser' ? 'draw-btn-active' : ''}`}
+            onClick={() => setDrawMode(drawMode === 'laser' ? 'none' : 'laser')}
+            title="Laser pointer"
           >
-            ✏️
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#ff4444" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <line x1="2" y1="22" x2="16" y2="8"/>
+              <circle cx="18" cy="6" r="3" fill="#ff2222" stroke="none"/>
+              <line x1="18" y1="2" x2="18" y2="0" opacity="0.5"/>
+              <line x1="22" y1="6" x2="24" y2="6" opacity="0.5"/>
+              <line x1="21" y1="3" x2="22.5" y2="1.5" opacity="0.5"/>
+            </svg>
           </button>
+          <div className="draw-btn-wrapper">
+            <button
+              className={`draw-btn ${drawMode === 'pencil' ? 'draw-btn-active' : ''}`}
+              onClick={() => setDrawMode(drawMode === 'pencil' ? 'none' : 'pencil')}
+              title="Draw (pencil)"
+              style={{ borderBottomColor: drawMode === 'pencil' ? penColor : undefined }}
+            >
+              ✏️
+            </button>
+            <div className="color-picker-popup">
+              {['#e0e0e0', '#ef4444', '#f59e0b', '#22c55e', '#3b82f6', '#a855f7', '#ec4899'].map(c => (
+                <button
+                  key={c}
+                  className={`color-dot ${penColor === c ? 'color-dot-active' : ''}`}
+                  style={{ background: c }}
+                  onClick={(e) => { e.stopPropagation(); setPenColor(c); }}
+                  title={c}
+                />
+              ))}
+            </div>
+          </div>
           <button
             className={`draw-btn ${drawMode === 'eraser' ? 'draw-btn-active' : ''}`}
             onClick={() => setDrawMode(drawMode === 'eraser' ? 'none' : 'eraser')}
@@ -469,6 +508,7 @@ function App() {
           onConnectionClick={handleConnectionClick}
           svgRef={svgRef}
           drawMode={drawMode}
+          penColor={penColor}
           activeDiagramId={activeId}
           strokes={strokes}
           onStrokesChange={(newStrokes) => {

@@ -18,7 +18,8 @@ interface Props {
   onNodeClick?: (id: string) => void;
   onConnectionClick?: (from: string, to: string) => void;
   svgRef: React.RefObject<SVGSVGElement | null>;
-  drawMode: 'none' | 'pencil' | 'eraser';
+  drawMode: 'none' | 'pencil' | 'eraser' | 'laser';
+  penColor: string;
   activeDiagramId: string;
   strokes: StrokeData[];
   onStrokesChange: (strokes: StrokeData[]) => void;
@@ -40,7 +41,7 @@ function getSvgPathFromStroke(stroke: number[][]): string {
 
 const DiagramCanvas: React.FC<Props> = ({
   data, theme, onNodeMove, onNodeClick, onConnectionClick,
-  svgRef, drawMode, strokes, onStrokesChange,
+  svgRef, drawMode, penColor, strokes, onStrokesChange,
 }) => {
   const dragState = useRef<{ id: string; offsetX: number; offsetY: number } | null>(null);
   const panState = useRef<{ startX: number; startY: number; originX: number; originY: number } | null>(null);
@@ -49,6 +50,22 @@ const DiagramCanvas: React.FC<Props> = ({
   // Current stroke being drawn
   const [currentStroke, setCurrentStroke] = useState<number[][] | null>(null);
   const isDrawing = useRef(false);
+
+  // Laser pointer trails (fade out over 3s)
+  interface LaserTrail { points: number[][]; createdAt: number; }
+  const [laserTrails, setLaserTrails] = useState<LaserTrail[]>([]);
+  const [currentLaser, setCurrentLaser] = useState<number[][] | null>(null);
+  const isLasering = useRef(false);
+
+  // Animate laser fade
+  useEffect(() => {
+    if (laserTrails.length === 0) return;
+    const interval = setInterval(() => {
+      const now = Date.now();
+      setLaserTrails(prev => prev.filter(t => now - t.createdAt < 3000));
+    }, 100);
+    return () => clearInterval(interval);
+  }, [laserTrails.length]);
 
   // Pan & zoom
   const WORLD_SIZE = { w: 7200, h: 5400 };
@@ -176,6 +193,10 @@ const DiagramCanvas: React.FC<Props> = ({
     if (drawMode === 'none') return;
     if (e.button === 1) { handleCanvasMouseDown(e); return; } // Middle = pan
 
+    // Don't draw if clicking on a node — let node drag handle it
+    const target = e.target as Element;
+    if (target.closest('.diagram-node')) return;
+
     const svgP = screenToSvg(e);
     if (!svgP) return;
 
@@ -198,22 +219,38 @@ const DiagramCanvas: React.FC<Props> = ({
       isDrawing.current = true;
       setCurrentStroke([[svgP.x, svgP.y, 0.5]]);
     }
+
+    // Laser: start laser trail
+    if (drawMode === 'laser' && e.button === 0) {
+      e.preventDefault();
+      isLasering.current = true;
+      setCurrentLaser([[svgP.x, svgP.y, 0.5]]);
+    }
   }, [drawMode, screenToSvg, strokes, onStrokesChange, handleCanvasMouseDown]);
 
   const handleDrawMove = useCallback((e: React.MouseEvent) => {
-    if (!isDrawing.current || !currentStroke) return;
     const svgP = screenToSvg(e);
     if (!svgP) return;
-    setCurrentStroke(prev => prev ? [...prev, [svgP.x, svgP.y, 0.5]] : null);
-  }, [currentStroke, screenToSvg]);
+    if (isDrawing.current && currentStroke) {
+      setCurrentStroke(prev => prev ? [...prev, [svgP.x, svgP.y, 0.5]] : null);
+    }
+    if (isLasering.current && currentLaser) {
+      setCurrentLaser(prev => prev ? [...prev, [svgP.x, svgP.y, 0.5]] : null);
+    }
+  }, [currentStroke, currentLaser, screenToSvg]);
 
   const handleDrawUp = useCallback(() => {
     if (isDrawing.current && currentStroke && currentStroke.length > 1) {
-      onStrokesChange([...strokes, { points: currentStroke, color: '#e0e0e0', size: 3 }]);
+      onStrokesChange([...strokes, { points: currentStroke, color: penColor, size: 3 }]);
+    }
+    if (isLasering.current && currentLaser && currentLaser.length > 1) {
+      setLaserTrails(prev => [...prev, { points: currentLaser, createdAt: Date.now() }]);
     }
     isDrawing.current = false;
+    isLasering.current = false;
     setCurrentStroke(null);
-  }, [currentStroke, strokes, onStrokesChange]);
+    setCurrentLaser(null);
+  }, [currentStroke, currentLaser, strokes, onStrokesChange, penColor]);
 
   const handleContextMenu = useCallback((e: React.MouseEvent) => {
     if (drawMode !== 'none') e.preventDefault();
@@ -248,7 +285,52 @@ const DiagramCanvas: React.FC<Props> = ({
     currentStrokePath = getSvgPathFromStroke(outline);
   }
 
+  // Current laser preview
+  let currentLaserPath = '';
+  if (currentLaser && currentLaser.length > 1) {
+    const outline = getStroke(currentLaser, {
+      size: 2,
+      thinning: 0.3,
+      smoothing: 0.5,
+      streamline: 0.5,
+      simulatePressure: false,
+    });
+    currentLaserPath = getSvgPathFromStroke(outline);
+  }
+
+  // Render a laser trail with fade opacity
+  const renderLaserTrail = (trail: { points: number[][]; createdAt: number }, key: number) => {
+    const age = (Date.now() - trail.createdAt) / 3000; // 0 to 1 over 3s
+    // Fast exponential fade — drops quickly in first second, then slow tail
+    const opacity = Math.max(0, Math.pow(1 - age, 3));
+    if (opacity <= 0) return null;
+    const outline = getStroke(trail.points, {
+      size: 2,
+      thinning: 0.3,
+      smoothing: 0.5,
+      streamline: 0.5,
+      simulatePressure: false,
+    });
+    const pathData = getSvgPathFromStroke(outline);
+    return <path key={key} d={pathData} fill="#ff3333" opacity={opacity} />;
+  };
+
   const isDrawActive = drawMode !== 'none';
+
+  // Custom SVG cursors
+  const cursorPen = `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'%3E%3Cpath d='M3 21l1.5-4.5L17 4l3 3L7.5 19.5z' fill='%23333' stroke='%23e0e0e0' stroke-width='1'/%3E%3Cpath d='M3 21l1.5-4.5 3 3z' fill='%23e0e0e0'/%3E%3C/svg%3E") 2 22, crosshair`;
+  const cursorEraser = `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'%3E%3Crect x='4' y='4' width='16' height='16' rx='3' fill='%23555' stroke='%23aaa' stroke-width='1.5'/%3E%3Cline x1='8' y1='12' x2='16' y2='12' stroke='%23ccc' stroke-width='1.5' stroke-linecap='round'/%3E%3C/svg%3E") 12 12, not-allowed`;
+  const cursorLaser = `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'%3E%3Ccircle cx='12' cy='12' r='8' fill='%23ff2222' opacity='0.15'/%3E%3Ccircle cx='12' cy='12' r='4' fill='%23ff2222' opacity='0.5'/%3E%3Ccircle cx='12' cy='12' r='2' fill='%23ff4444'/%3E%3C/svg%3E") 12 12, crosshair`;
+
+  const getCursor = () => {
+    if (isPanning) return 'grabbing';
+    switch (drawMode) {
+      case 'laser': return cursorLaser;
+      case 'pencil': return cursorPen;
+      case 'eraser': return cursorEraser;
+      default: return 'default';
+    }
+  };
 
   return (
     <div className="canvas-panel" style={{ background: styles.surface }}>
@@ -259,7 +341,7 @@ const DiagramCanvas: React.FC<Props> = ({
         viewBox={`${viewBox.x} ${viewBox.y} ${viewBox.w} ${viewBox.h}`}
         preserveAspectRatio="xMidYMid meet"
         className="diagram-svg"
-        style={{ cursor: isPanning ? 'grabbing' : isDrawActive ? (drawMode === 'pencil' ? 'crosshair' : 'cell') : 'default' }}
+        style={{ cursor: getCursor() }}
         onMouseDown={(e) => {
           if (isDrawActive) handleDrawDown(e);
           else handleCanvasMouseDown(e);
@@ -281,13 +363,19 @@ const DiagramCanvas: React.FC<Props> = ({
         ))}
 
         {data.nodes.map((node) => (
-          <DiagramNode key={node.id} node={node} onDragStart={handleDragStart} onClick={onNodeClick} textColor={styles.text} />
+          <DiagramNode key={node.id} node={node} onDragStart={handleDragStart} onClick={onNodeClick} textColor={styles.text} interactive={!isDrawActive} />
         ))}
 
         {/* Drawing layer — on top of nodes */}
         <g className="drawing-layer" style={{ pointerEvents: isDrawActive ? 'auto' : 'none' }}>
           {strokes.map((stroke, i) => renderStroke(stroke, i))}
-          {currentStrokePath && <path d={currentStrokePath} fill="#e0e0e0" opacity="0.85" />}
+          {currentStrokePath && <path d={currentStrokePath} fill={penColor} opacity="0.85" />}
+        </g>
+
+        {/* Laser layer — on top of everything */}
+        <g className="laser-layer" style={{ pointerEvents: 'none' }}>
+          {laserTrails.map((trail, i) => renderLaserTrail(trail, i))}
+          {currentLaserPath && <path d={currentLaserPath} fill="#ff3333" opacity="1" />}
         </g>
       </svg>
     </div>
