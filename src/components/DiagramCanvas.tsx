@@ -103,7 +103,7 @@ const DiagramCanvas: React.FC<Props> = ({
   }, [svgRef]);
 
   // Node drag
-  const handleDragStart = useCallback((id: string, e: React.MouseEvent) => {
+  const handleDragStart = useCallback((id: string, e: React.MouseEvent | React.PointerEvent) => {
     if (e.button !== 0) return;
     e.preventDefault();
     const node = data.nodes.find((n) => n.id === id);
@@ -112,7 +112,7 @@ const DiagramCanvas: React.FC<Props> = ({
     if (!svgP) return;
     dragState.current = { id, offsetX: svgP.x - node.x, offsetY: svgP.y - node.y };
 
-    const handleMove = (me: MouseEvent) => {
+    const handleMove = (me: PointerEvent | MouseEvent) => {
       if (!dragState.current) return;
       const mp = screenToSvg(me);
       if (!mp) return;
@@ -120,15 +120,15 @@ const DiagramCanvas: React.FC<Props> = ({
     };
     const handleUp = () => {
       dragState.current = null;
-      window.removeEventListener('mousemove', handleMove);
-      window.removeEventListener('mouseup', handleUp);
+      window.removeEventListener('pointermove', handleMove);
+      window.removeEventListener('pointerup', handleUp);
     };
-    window.addEventListener('mousemove', handleMove);
-    window.addEventListener('mouseup', handleUp);
+    window.addEventListener('pointermove', handleMove);
+    window.addEventListener('pointerup', handleUp);
   }, [data.nodes, onNodeMove, svgRef, screenToSvg]);
 
   // Middle-mouse pan
-  const handleCanvasMouseDown = useCallback((e: React.MouseEvent) => {
+  const handleCanvasMouseDown = useCallback((e: React.MouseEvent | React.PointerEvent) => {
     if (e.button !== 1) return;
     e.preventDefault();
     panState.current = { startX: e.clientX, startY: e.clientY, originX: viewBox.x, originY: viewBox.y };
@@ -138,7 +138,7 @@ const DiagramCanvas: React.FC<Props> = ({
     const pixelToSvgX = viewBox.w / svg.clientWidth;
     const pixelToSvgY = viewBox.h / svg.clientHeight;
 
-    const handleMove = (me: MouseEvent) => {
+    const handleMove = (me: PointerEvent | MouseEvent) => {
       if (!panState.current) return;
       const { startX, startY, originX, originY } = panState.current;
       const dx = (me.clientX - startX) * pixelToSvgX;
@@ -152,11 +152,11 @@ const DiagramCanvas: React.FC<Props> = ({
     const handleUp = () => {
       panState.current = null;
       setIsPanning(false);
-      window.removeEventListener('mousemove', handleMove);
-      window.removeEventListener('mouseup', handleUp);
+      window.removeEventListener('pointermove', handleMove);
+      window.removeEventListener('pointerup', handleUp);
     };
-    window.addEventListener('mousemove', handleMove);
-    window.addEventListener('mouseup', handleUp);
+    window.addEventListener('pointermove', handleMove);
+    window.addEventListener('pointerup', handleUp);
   }, [viewBox, svgRef, WORLD_MIN.x, WORLD_MIN.y, WORLD_SIZE.w, WORLD_SIZE.h]);
 
   // Scroll to zoom
@@ -189,7 +189,7 @@ const DiagramCanvas: React.FC<Props> = ({
   }, [svgRef, WORLD_MIN.x, WORLD_MIN.y, WORLD_SIZE.w, WORLD_SIZE.h]);
 
   // Drawing handlers
-  const handleDrawDown = useCallback((e: React.MouseEvent) => {
+  const handleDrawDown = useCallback((e: React.MouseEvent | React.PointerEvent) => {
     if (drawMode === 'none') return;
     if (e.button === 1) { handleCanvasMouseDown(e); return; } // Middle = pan
 
@@ -199,9 +199,9 @@ const DiagramCanvas: React.FC<Props> = ({
 
     const svgP = screenToSvg(e);
     if (!svgP) return;
+    const pressure = 'pressure' in e ? (e as React.PointerEvent).pressure || 0.5 : 0.5;
 
     if (e.button === 2 || drawMode === 'eraser') {
-      // Erase: remove strokes near the click point
       e.preventDefault();
       const threshold = 15;
       const filtered = strokes.filter(stroke =>
@@ -213,29 +213,28 @@ const DiagramCanvas: React.FC<Props> = ({
       return;
     }
 
-    // Pencil: start new stroke
     if (drawMode === 'pencil' && e.button === 0) {
       e.preventDefault();
       isDrawing.current = true;
-      setCurrentStroke([[svgP.x, svgP.y, 0.5]]);
+      setCurrentStroke([[svgP.x, svgP.y, pressure]]);
     }
 
-    // Laser: start laser trail
     if (drawMode === 'laser' && e.button === 0) {
       e.preventDefault();
       isLasering.current = true;
-      setCurrentLaser([[svgP.x, svgP.y, 0.5]]);
+      setCurrentLaser([[svgP.x, svgP.y, pressure]]);
     }
   }, [drawMode, screenToSvg, strokes, onStrokesChange, handleCanvasMouseDown]);
 
-  const handleDrawMove = useCallback((e: React.MouseEvent) => {
+  const handleDrawMove = useCallback((e: React.MouseEvent | React.PointerEvent) => {
     const svgP = screenToSvg(e);
     if (!svgP) return;
+    const pressure = 'pressure' in e ? (e as React.PointerEvent).pressure || 0.5 : 0.5;
     if (isDrawing.current && currentStroke) {
-      setCurrentStroke(prev => prev ? [...prev, [svgP.x, svgP.y, 0.5]] : null);
+      setCurrentStroke(prev => prev ? [...prev, [svgP.x, svgP.y, pressure]] : null);
     }
     if (isLasering.current && currentLaser) {
-      setCurrentLaser(prev => prev ? [...prev, [svgP.x, svgP.y, 0.5]] : null);
+      setCurrentLaser(prev => prev ? [...prev, [svgP.x, svgP.y, pressure]] : null);
     }
   }, [currentStroke, currentLaser, screenToSvg]);
 
@@ -252,7 +251,7 @@ const DiagramCanvas: React.FC<Props> = ({
     setCurrentLaser(null);
   }, [currentStroke, currentLaser, strokes, onStrokesChange, penColor]);
 
-  const handleContextMenu = useCallback((e: React.MouseEvent) => {
+  const handleContextMenu = useCallback((e: React.MouseEvent | React.PointerEvent) => {
     if (drawMode !== 'none') e.preventDefault();
   }, [drawMode]);
 
@@ -341,14 +340,14 @@ const DiagramCanvas: React.FC<Props> = ({
         viewBox={`${viewBox.x} ${viewBox.y} ${viewBox.w} ${viewBox.h}`}
         preserveAspectRatio="xMidYMid meet"
         className="diagram-svg"
-        style={{ cursor: getCursor() }}
-        onMouseDown={(e) => {
+        style={{ cursor: getCursor(), touchAction: 'none' }}
+        onPointerDown={(e) => {
           if (isDrawActive) handleDrawDown(e);
           else handleCanvasMouseDown(e);
         }}
-        onMouseMove={isDrawActive ? handleDrawMove : undefined}
-        onMouseUp={isDrawActive ? handleDrawUp : undefined}
-        onMouseLeave={isDrawActive ? handleDrawUp : undefined}
+        onPointerMove={isDrawActive ? handleDrawMove : undefined}
+        onPointerUp={isDrawActive ? handleDrawUp : undefined}
+        onPointerLeave={isDrawActive ? handleDrawUp : undefined}
         onContextMenu={handleContextMenu}
       >
         <defs>

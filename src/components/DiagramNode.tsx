@@ -3,7 +3,7 @@ import { NODE_WIDTH, NODE_HEIGHT, NODE_COLORS, NODE_ICONS, type DiagramNode as D
 
 interface Props {
   node: DiagramNodeType;
-  onDragStart: (id: string, e: React.MouseEvent) => void;
+  onDragStart: (id: string, e: React.MouseEvent | React.PointerEvent) => void;
   onClick?: (id: string) => void;
   textColor: string;
   interactive?: boolean;
@@ -135,7 +135,7 @@ const DiagramNodeComponent: React.FC<Props> = ({ node, onDragStart, onClick, tex
   const isExternal = node.type === 'external';
   const labelColor = isExternal ? textColor : '#fff';
 
-  const handleMouseDown = (e: React.MouseEvent) => {
+  const handlePointerDown = (e: React.PointerEvent) => {
     if (!interactive) return;
     onDragStart(node.id, e);
   };
@@ -149,9 +149,9 @@ const DiagramNodeComponent: React.FC<Props> = ({ node, onDragStart, onClick, tex
   return (
     <g
       transform={`translate(${node.x}, ${node.y})`}
-      onMouseDown={handleMouseDown}
+      onPointerDown={handlePointerDown}
       onDoubleClick={handleDoubleClick}
-      style={{ cursor: interactive ? 'grab' : 'inherit', pointerEvents: interactive ? 'auto' : 'none' }}
+      style={{ cursor: interactive ? 'grab' : 'inherit', pointerEvents: interactive ? 'auto' : 'none', touchAction: 'none' }}
       className="diagram-node"
     >
       {getNodeShape(node.type, color)}
