@@ -196,13 +196,25 @@ const DiagramCanvas: React.FC<Props> = ({
 
   const handleDrawDown = useCallback((e: React.MouseEvent | React.PointerEvent) => {
     const isPen = isPenInput(e);
+    const pointerType = 'pointerType' in e ? (e as React.PointerEvent).pointerType : 'mouse';
+    const buttons = e.buttons;
+    console.log(`[DrawDown] pointerType=${pointerType} button=${e.button} buttons=${buttons} isPen=${isPen} drawMode=${drawMode}`);
+
     const effectiveMode = isPen ? (drawMode === 'laser' ? 'laser' : 'pencil') : drawMode;
+    console.log(`[DrawDown] effectiveMode=${effectiveMode}`);
 
     // Middle button = always pan (pen or mouse)
-    if (e.button === 1) { handleCanvasMouseDown(e); return; }
+    // Pen tablets may report button=1 or button=4 for middle
+    if (e.button === 1 || e.button === 4) {
+      console.log(`[DrawDown] → PAN (button=${e.button})`);
+      handleCanvasMouseDown(e);
+      return;
+    }
 
-    // Right button = always erase (pen or mouse in draw mode)
-    if (e.button === 2) {
+    // Right button = always erase (pen or mouse)
+    // Pen tablets may report button=2 or button=5 for right/eraser
+    if (e.button === 2 || e.button === 5) {
+      console.log(`[DrawDown] → ERASE (button=${e.button})`);
       e.preventDefault();
       const svgP = screenToSvg(e);
       if (!svgP) return;
@@ -216,11 +228,15 @@ const DiagramCanvas: React.FC<Props> = ({
       return;
     }
 
-    if (!isPen && effectiveMode === 'none') return;
+    if (!isPen && effectiveMode === 'none') {
+      console.log(`[DrawDown] → IGNORED (mouse, no tool selected)`);
+      return;
+    }
 
     const svgP = screenToSvg(e);
     if (!svgP) return;
     const pressure = 'pressure' in e ? (e as React.PointerEvent).pressure || 0.5 : 0.5;
+    console.log(`[DrawDown] → DRAW at (${svgP.x.toFixed(0)}, ${svgP.y.toFixed(0)}) pressure=${pressure.toFixed(2)}`);
 
     if (effectiveMode === 'eraser') {
       e.preventDefault();
@@ -273,8 +289,9 @@ const DiagramCanvas: React.FC<Props> = ({
   }, [currentStroke, currentLaser, strokes, onStrokesChange, penColor]);
 
   const handleContextMenu = useCallback((e: React.MouseEvent | React.PointerEvent) => {
-    const isPen = 'pointerType' in e && (e as React.PointerEvent).pointerType === 'pen';
-    if (isPen || drawMode !== 'none') e.preventDefault();
+    const pointerType = 'pointerType' in e ? (e as React.PointerEvent).pointerType : 'mouse';
+    console.log(`[ContextMenu] pointerType=${pointerType} drawMode=${drawMode} → BLOCKED`);
+    e.preventDefault();
   }, [drawMode]);
 
   // Render stroke paths
@@ -365,6 +382,7 @@ const DiagramCanvas: React.FC<Props> = ({
         style={{ cursor: getCursor(), touchAction: 'none' }}
         onPointerDown={(e) => {
           const isPen = 'pointerType' in e && e.pointerType === 'pen';
+          console.log(`[SVG PointerDown] type=${e.pointerType} button=${e.button} buttons=${e.buttons} isPen=${isPen} isDrawActive=${isDrawActive}`);
           if (isPen || isDrawActive) handleDrawDown(e);
           else handleCanvasMouseDown(e);
         }}
@@ -374,6 +392,7 @@ const DiagramCanvas: React.FC<Props> = ({
         }}
         onPointerUp={(e) => {
           const isPen = 'pointerType' in e && e.pointerType === 'pen';
+          console.log(`[SVG PointerUp] type=${e.pointerType} button=${e.button}`);
           if (isPen || isDrawActive) handleDrawUp();
         }}
         onPointerLeave={(e) => {

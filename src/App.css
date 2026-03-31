@@ -509,6 +509,10 @@
   transition: filter 0.15s ease;
 }
 
+.diagram-node-interactive {
+  cursor: grab;
+}
+
 .diagram-node:hover {
   filter: brightness(1.15) drop-shadow(0 2px 8px rgba(0,0,0,0.3));
 }

@@ -153,8 +153,8 @@ const DiagramNodeComponent: React.FC<Props> = ({ node, onDragStart, onClick, tex
       transform={`translate(${node.x}, ${node.y})`}
       onPointerDown={handlePointerDown}
       onDoubleClick={handleDoubleClick}
-      style={{ cursor: interactive ? 'grab' : 'inherit', pointerEvents: interactive ? 'auto' : 'none', touchAction: 'none' }}
-      className="diagram-node"
+      style={{ pointerEvents: interactive ? 'auto' : 'none', touchAction: 'none' }}
+      className={`diagram-node ${interactive ? 'diagram-node-interactive' : ''}`}
     >
       {getNodeShape(node.type, color)}
       <text
