@@ -127,9 +127,9 @@ const DiagramCanvas: React.FC<Props> = ({
     window.addEventListener('pointerup', handleUp);
   }, [data.nodes, onNodeMove, svgRef, screenToSvg]);
 
-  // Middle-mouse pan
-  const handleCanvasMouseDown = useCallback((e: React.MouseEvent | React.PointerEvent) => {
-    if (e.button !== 1) return;
+  // Middle-mouse pan — also called for shift+pen
+  const handleCanvasMouseDown = useCallback((e: React.MouseEvent | React.PointerEvent, force = false) => {
+    if (!force && e.button !== 1) return;
     e.preventDefault();
     panState.current = { startX: e.clientX, startY: e.clientY, originX: viewBox.x, originY: viewBox.y };
     setIsPanning(true);
@@ -198,23 +198,21 @@ const DiagramCanvas: React.FC<Props> = ({
     const isPen = isPenInput(e);
     const pointerType = 'pointerType' in e ? (e as React.PointerEvent).pointerType : 'mouse';
     const buttons = e.buttons;
-    console.log(`[DrawDown] pointerType=${pointerType} button=${e.button} buttons=${buttons} isPen=${isPen} drawMode=${drawMode}`);
+    console.log(`[DrawDown] pointerType=${pointerType} button=${e.button} buttons=${buttons} isPen=${isPen} drawMode=${drawMode} shift=${e.shiftKey} ctrl=${e.ctrlKey} alt=${e.altKey}`);
 
     const effectiveMode = isPen ? (drawMode === 'laser' ? 'laser' : 'pencil') : drawMode;
     console.log(`[DrawDown] effectiveMode=${effectiveMode}`);
 
-    // Middle button = always pan (pen or mouse)
-    // Pen tablets may report button=1 or button=4 for middle
-    if (e.button === 1 || e.button === 4) {
-      console.log(`[DrawDown] → PAN (button=${e.button})`);
-      handleCanvasMouseDown(e);
+    // Middle button OR Shift+pen = pan
+    if (e.button === 1 || e.button === 4 || (isPen && e.shiftKey)) {
+      console.log(`[DrawDown] → PAN (button=${e.button} shift=${e.shiftKey})`);
+      handleCanvasMouseDown(e, true);
       return;
     }
 
-    // Right button = always erase (pen or mouse)
-    // Pen tablets may report button=2 or button=5 for right/eraser
-    if (e.button === 2 || e.button === 5) {
-      console.log(`[DrawDown] → ERASE (button=${e.button})`);
+    // Right button OR Ctrl+pen = always erase
+    if (e.button === 2 || e.button === 5 || (isPen && e.ctrlKey)) {
+      console.log(`[DrawDown] → ERASE (button=${e.button} ctrl=${e.ctrlKey})`);
       e.preventDefault();
       const svgP = screenToSvg(e);
       if (!svgP) return;
