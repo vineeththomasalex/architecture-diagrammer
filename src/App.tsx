@@ -472,7 +472,7 @@ function App() {
                   key={c}
                   className={`color-dot ${penColor === c ? 'color-dot-active' : ''}`}
                   style={{ background: c }}
-                  onClick={(e) => { e.stopPropagation(); setPenColor(c); }}
+                  onClick={(e) => { e.stopPropagation(); setPenColor(c); setDrawMode('pencil'); }}
                   title={c}
                 />
               ))}
