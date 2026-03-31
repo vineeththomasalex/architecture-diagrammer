@@ -198,20 +198,31 @@ const DiagramCanvas: React.FC<Props> = ({
     const isPen = isPenInput(e);
     const effectiveMode = isPen ? (drawMode === 'laser' ? 'laser' : 'pencil') : drawMode;
 
-    if (!isPen && effectiveMode === 'none') return;
+    // Middle button = always pan (pen or mouse)
     if (e.button === 1) { handleCanvasMouseDown(e); return; }
 
-    // Don't draw if clicking on a node with mouse
-    if (!isPen) {
-      const target = e.target as Element;
-      if (target.closest('.diagram-node')) return;
+    // Right button = always erase (pen or mouse in draw mode)
+    if (e.button === 2) {
+      e.preventDefault();
+      const svgP = screenToSvg(e);
+      if (!svgP) return;
+      const threshold = 15;
+      const filtered = strokes.filter(stroke =>
+        !stroke.points.some(([px, py]) =>
+          Math.abs(px - svgP.x) < threshold && Math.abs(py - svgP.y) < threshold
+        )
+      );
+      if (filtered.length !== strokes.length) onStrokesChange(filtered);
+      return;
     }
+
+    if (!isPen && effectiveMode === 'none') return;
 
     const svgP = screenToSvg(e);
     if (!svgP) return;
     const pressure = 'pressure' in e ? (e as React.PointerEvent).pressure || 0.5 : 0.5;
 
-    if (e.button === 2 || effectiveMode === 'eraser') {
+    if (effectiveMode === 'eraser') {
       e.preventDefault();
       const threshold = 15;
       const filtered = strokes.filter(stroke =>
@@ -262,7 +273,8 @@ const DiagramCanvas: React.FC<Props> = ({
   }, [currentStroke, currentLaser, strokes, onStrokesChange, penColor]);
 
   const handleContextMenu = useCallback((e: React.MouseEvent | React.PointerEvent) => {
-    if (drawMode !== 'none') e.preventDefault();
+    const isPen = 'pointerType' in e && (e as React.PointerEvent).pointerType === 'pen';
+    if (isPen || drawMode !== 'none') e.preventDefault();
   }, [drawMode]);
 
   // Render stroke paths

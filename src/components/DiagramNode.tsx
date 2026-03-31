@@ -137,6 +137,8 @@ const DiagramNodeComponent: React.FC<Props> = ({ node, onDragStart, onClick, tex
 
   const handlePointerDown = (e: React.PointerEvent) => {
     if (!interactive) return;
+    // Pen tablet should never drag nodes — pen is for drawing
+    if (e.pointerType === 'pen') return;
     onDragStart(node.id, e);
   };
 
