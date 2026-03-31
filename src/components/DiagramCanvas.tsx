@@ -189,19 +189,29 @@ const DiagramCanvas: React.FC<Props> = ({
   }, [svgRef, WORLD_MIN.x, WORLD_MIN.y, WORLD_SIZE.w, WORLD_SIZE.h]);
 
   // Drawing handlers
-  const handleDrawDown = useCallback((e: React.MouseEvent | React.PointerEvent) => {
-    if (drawMode === 'none') return;
-    if (e.button === 1) { handleCanvasMouseDown(e); return; } // Middle = pan
+  // Handle pen tablet: auto-draw without needing pencil mode selected
+  const isPenInput = useCallback((e: React.PointerEvent | React.MouseEvent): boolean => {
+    return 'pointerType' in e && (e as React.PointerEvent).pointerType === 'pen';
+  }, []);
 
-    // Don't draw if clicking on a node — let node drag handle it
-    const target = e.target as Element;
-    if (target.closest('.diagram-node')) return;
+  const handleDrawDown = useCallback((e: React.MouseEvent | React.PointerEvent) => {
+    const isPen = isPenInput(e);
+    const effectiveMode = isPen ? (drawMode === 'laser' ? 'laser' : 'pencil') : drawMode;
+
+    if (!isPen && effectiveMode === 'none') return;
+    if (e.button === 1) { handleCanvasMouseDown(e); return; }
+
+    // Don't draw if clicking on a node with mouse
+    if (!isPen) {
+      const target = e.target as Element;
+      if (target.closest('.diagram-node')) return;
+    }
 
     const svgP = screenToSvg(e);
     if (!svgP) return;
     const pressure = 'pressure' in e ? (e as React.PointerEvent).pressure || 0.5 : 0.5;
 
-    if (e.button === 2 || drawMode === 'eraser') {
+    if (e.button === 2 || effectiveMode === 'eraser') {
       e.preventDefault();
       const threshold = 15;
       const filtered = strokes.filter(stroke =>
@@ -213,18 +223,18 @@ const DiagramCanvas: React.FC<Props> = ({
       return;
     }
 
-    if (drawMode === 'pencil' && e.button === 0) {
+    if (effectiveMode === 'pencil' && e.button === 0) {
       e.preventDefault();
       isDrawing.current = true;
       setCurrentStroke([[svgP.x, svgP.y, pressure]]);
     }
 
-    if (drawMode === 'laser' && e.button === 0) {
+    if (effectiveMode === 'laser' && e.button === 0) {
       e.preventDefault();
       isLasering.current = true;
       setCurrentLaser([[svgP.x, svgP.y, pressure]]);
     }
-  }, [drawMode, screenToSvg, strokes, onStrokesChange, handleCanvasMouseDown]);
+  }, [drawMode, screenToSvg, strokes, onStrokesChange, handleCanvasMouseDown, isPenInput]);
 
   const handleDrawMove = useCallback((e: React.MouseEvent | React.PointerEvent) => {
     const svgP = screenToSvg(e);
@@ -342,12 +352,22 @@ const DiagramCanvas: React.FC<Props> = ({
         className="diagram-svg"
         style={{ cursor: getCursor(), touchAction: 'none' }}
         onPointerDown={(e) => {
-          if (isDrawActive) handleDrawDown(e);
+          const isPen = 'pointerType' in e && e.pointerType === 'pen';
+          if (isPen || isDrawActive) handleDrawDown(e);
           else handleCanvasMouseDown(e);
         }}
-        onPointerMove={isDrawActive ? handleDrawMove : undefined}
-        onPointerUp={isDrawActive ? handleDrawUp : undefined}
-        onPointerLeave={isDrawActive ? handleDrawUp : undefined}
+        onPointerMove={(e) => {
+          const isPen = 'pointerType' in e && e.pointerType === 'pen';
+          if (isPen || isDrawActive) handleDrawMove(e);
+        }}
+        onPointerUp={(e) => {
+          const isPen = 'pointerType' in e && e.pointerType === 'pen';
+          if (isPen || isDrawActive) handleDrawUp();
+        }}
+        onPointerLeave={(e) => {
+          const isPen = 'pointerType' in e && e.pointerType === 'pen';
+          if (isPen || isDrawActive) handleDrawUp();
+        }}
         onContextMenu={handleContextMenu}
       >
         <defs>
