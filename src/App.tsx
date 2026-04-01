@@ -76,6 +76,58 @@ function App() {
   const initialLayoutDone = useRef(false);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // Undo/redo stacks for drawing strokes
+  const undoStack = useRef<StrokeData[][]>([]);
+  const redoStack = useRef<StrokeData[][]>([]);
+
+  const updateStrokes = useCallback((newStrokes: StrokeData[]) => {
+    undoStack.current.push([...strokes]);
+    redoStack.current = []; // Clear redo on new action
+    setDiagrams(prev => prev.map(d =>
+      d.id === activeId ? { ...d, strokes: newStrokes } : d
+    ));
+  }, [strokes, activeId, setDiagrams]);
+
+  const undoStroke = useCallback(() => {
+    if (undoStack.current.length === 0) return;
+    redoStack.current.push([...strokes]);
+    const prev = undoStack.current.pop()!;
+    setDiagrams(p => p.map(d =>
+      d.id === activeId ? { ...d, strokes: prev } : d
+    ));
+  }, [strokes, activeId, setDiagrams]);
+
+  const redoStroke = useCallback(() => {
+    if (redoStack.current.length === 0) return;
+    undoStack.current.push([...strokes]);
+    const next = redoStack.current.pop()!;
+    setDiagrams(p => p.map(d =>
+      d.id === activeId ? { ...d, strokes: next } : d
+    ));
+  }, [strokes, activeId, setDiagrams]);
+
+  // Reset undo/redo when switching diagrams
+  useEffect(() => {
+    undoStack.current = [];
+    redoStack.current = [];
+  }, [activeId]);
+
+  // Keyboard shortcut: Ctrl+Z / Ctrl+Shift+Z / Ctrl+Y
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) {
+        e.preventDefault();
+        undoStroke();
+      }
+      if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || (e.key === 'z' && e.shiftKey))) {
+        e.preventDefault();
+        redoStroke();
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [undoStroke, redoStroke]);
+
   // Persist active tab
   useEffect(() => {
     localStorage.setItem(ACTIVE_KEY, activeId);
@@ -488,9 +540,7 @@ function App() {
           <button
             className="draw-btn"
             onClick={() => {
-              setDiagrams(prev => prev.map(d =>
-                d.id === activeId ? { ...d, strokes: [] } : d
-              ));
+              updateStrokes([]);
             }}
             title="Clear all drawings"
           >
@@ -511,11 +561,7 @@ function App() {
           penColor={penColor}
           activeDiagramId={activeId}
           strokes={strokes}
-          onStrokesChange={(newStrokes) => {
-            setDiagrams(prev => prev.map(d =>
-              d.id === activeId ? { ...d, strokes: newStrokes } : d
-            ));
-          }}
+          onStrokesChange={updateStrokes}
         />
       </main>
       {copyFeedback && <div className="copy-toast">📋 YAML copied to clipboard!</div>}
