@@ -205,7 +205,6 @@ function App() {
   }, [yaml]);
 
   const setYaml = useCallback((newYaml: string) => {
-    console.log("[App] YAML updated, length:", newYaml.length);
     setDiagrams((prev) =>
       prev.map((d) =>
         d.id === activeId ? { ...d, yaml: newYaml, lastModified: Date.now() } : d
@@ -277,7 +276,6 @@ function App() {
   }, [renamingTabId, renameValue]);
 
   const handleNodeMove = useCallback((id: string, x: number, y: number) => {
-    console.log("[App] Node moved:", id, x.toFixed(0), y.toFixed(0));
     setDiagram((prev) => ({
       ...prev,
       nodes: prev.nodes.map((n) => (n.id === id ? { ...n, x, y } : n)),
@@ -370,13 +368,11 @@ function App() {
   }, [yaml]);
 
   const handleNodeClick = useCallback((id: string) => {
-    console.log("[App] Node clicked:", id);
     const range = findNodeLines(id);
     setHighlightLines(range);
   }, [findNodeLines]);
 
   const handleConnectionClick = useCallback((from: string, to: string) => {
-    console.log("[App] Connection clicked:", from, "→", to);
     const range = findConnectionLines(from, to);
     setHighlightLines(range);
   }, [findConnectionLines]);
