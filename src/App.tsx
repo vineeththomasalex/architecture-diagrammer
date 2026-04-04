@@ -72,6 +72,9 @@ function App() {
   const [editorTab, setEditorTab] = useState<'yaml' | 'notes'>('yaml');
   const [drawMode, setDrawMode] = useState<'none' | 'pencil' | 'eraser' | 'laser'>('none');
   const [penColor, setPenColor] = useState('#e0e0e0');
+  const [panelWidth, setPanelWidth] = useState(360);
+  const [panelCollapsed, setPanelCollapsed] = useState(false);
+  const isResizing = useRef(false);
   const svgRef = useRef<SVGSVGElement | null>(null);
   const initialLayoutDone = useRef(false);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -550,7 +553,46 @@ function App() {
         </div>
       </div>
       <main className="app-main">
-        <YamlEditor value={yaml} onChange={setYaml} error={parseError} highlightLines={highlightLines} flashLines={flashLines} onAddNode={handleAddNode} onAddConnection={handleAddConnection} notes={notes} onNotesChange={setNotes} activeEditorTab={editorTab} onEditorTabChange={setEditorTab} />
+        {!panelCollapsed && (
+          <div className="editor-wrapper" style={{ width: panelWidth }}>
+            <YamlEditor value={yaml} onChange={setYaml} error={parseError} highlightLines={highlightLines} flashLines={flashLines} onAddNode={handleAddNode} onAddConnection={handleAddConnection} notes={notes} onNotesChange={setNotes} activeEditorTab={editorTab} onEditorTabChange={setEditorTab} />
+            <div
+              className="resize-handle"
+              onPointerDown={(e) => {
+                e.preventDefault();
+                isResizing.current = true;
+                const startX = e.clientX;
+                const startWidth = panelWidth;
+                const handleMove = (me: PointerEvent) => {
+                  if (!isResizing.current) return;
+                  const newWidth = startWidth + (me.clientX - startX);
+                  if (newWidth < 150) {
+                    setPanelCollapsed(true);
+                    isResizing.current = false;
+                  } else {
+                    setPanelWidth(Math.max(200, Math.min(700, newWidth)));
+                  }
+                };
+                const handleUp = () => {
+                  isResizing.current = false;
+                  window.removeEventListener('pointermove', handleMove);
+                  window.removeEventListener('pointerup', handleUp);
+                };
+                window.addEventListener('pointermove', handleMove);
+                window.addEventListener('pointerup', handleUp);
+              }}
+            />
+          </div>
+        )}
+        {panelCollapsed && (
+          <button
+            className="panel-expand-btn"
+            onClick={() => setPanelCollapsed(false)}
+            title="Show editor panel"
+          >
+            ☰
+          </button>
+        )}
         <DiagramCanvas
           data={diagram}
           theme={theme}
