@@ -92,12 +92,20 @@ const YamlEditor: React.FC<Props> = ({ value, onChange, error, highlightLines, f
   const notesInitialized = useRef(false);
   const [flashLines, setFlashLines] = useState<{ start: number; end: number } | null>(null);
 
-  const handleScroll = useCallback(() => {
+  // Keep pre and textarea scroll in sync continuously
+  const syncScroll = useCallback(() => {
     if (textareaRef.current && preRef.current) {
       preRef.current.scrollTop = textareaRef.current.scrollTop;
       preRef.current.scrollLeft = textareaRef.current.scrollLeft;
     }
   }, []);
+
+  // Sync on every render (catches programmatic scroll changes after content updates)
+  useEffect(() => {
+    syncScroll();
+  });
+
+  const handleScroll = syncScroll;
 
   // Scroll textarea to highlighted lines and select them
   useEffect(() => {
@@ -242,7 +250,7 @@ const YamlEditor: React.FC<Props> = ({ value, onChange, error, highlightLines, f
               ref={textareaRef}
               className="yaml-textarea"
               value={value}
-              onChange={(e) => onChange(e.target.value)}
+              onChange={(e) => { onChange(e.target.value); requestAnimationFrame(syncScroll); }}
               onScroll={handleScroll}
               spellCheck={false}
               placeholder="Define your architecture here..."
