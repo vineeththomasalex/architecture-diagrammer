@@ -1,4 +1,4 @@
-import React, { useRef, useCallback, useMemo, useEffect, useState } from 'react';
+import React, { useRef, useCallback, useEffect, useState } from 'react';
 import { NODE_COLORS, CONNECTION_STYLES, type NodeType, type ConnectionType } from '../types/diagram';
 import ReferencePanel from './ReferencePanel';
 
@@ -17,106 +17,228 @@ interface Props {
 }
 
 const YAML_KEYWORDS = ['nodes:', 'connections:'];
-
 const nodeTypeNames = Object.keys(NODE_COLORS) as NodeType[];
 const connTypeNames = Object.keys(CONNECTION_STYLES) as ConnectionType[];
 
-function highlightYaml(text: string): React.ReactNode[] {
+function escHtml(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+function highlightYamlToHtml(text: string, flashStart?: number, flashEnd?: number): string {
   const lines = text.split('\n');
   return lines.map((line, lineIdx) => {
-    const parts: React.ReactNode[] = [];
-    let remaining = line;
-    let key = 0;
+    let html = '';
+    const isFlash = flashStart !== undefined && flashEnd !== undefined &&
+      lineIdx >= flashStart && lineIdx <= flashEnd;
 
-    // Check for top-level YAML keywords
-    const kwMatch = YAML_KEYWORDS.find((kw) => remaining.trimStart() === kw);
+    if (isFlash) html += '<span class="yaml-flash">';
+
+    const kwMatch = YAML_KEYWORDS.find((kw) => line.trimStart() === kw);
     if (kwMatch) {
-      const indent = remaining.indexOf(kwMatch);
-      if (indent > 0) parts.push(remaining.slice(0, indent));
-      parts.push(<span key={key++} style={{ color: '#FF79C6' }}>{kwMatch}</span>);
-      remaining = '';
-    }
-
-    if (remaining) {
-      // Check for field keys like "  id:", "  type:", etc.
-      const fieldMatch = remaining.match(/^(\s*-?\s*)(id|label|type|from|to)(:)(.*)/);
+      const indent = line.indexOf(kwMatch);
+      if (indent > 0) html += escHtml(line.slice(0, indent));
+      html += `<span style="color:#FF79C6">${escHtml(kwMatch)}</span>`;
+    } else {
+      const fieldMatch = line.match(/^(\s*-?\s*)(id|label|type|from|to)(:)(.*)/);
       if (fieldMatch) {
         const [, indent, fieldName, colon, value] = fieldMatch;
-        parts.push(indent);
-        parts.push(<span key={key++} style={{ color: '#8BE9FD' }}>{fieldName}{colon}</span>);
-
+        html += escHtml(indent);
+        html += `<span style="color:#8BE9FD">${escHtml(fieldName + colon)}</span>`;
         const trimmedVal = value.trimStart();
         const valIndent = value.slice(0, value.length - trimmedVal.length);
-
         if (fieldName === 'type' && trimmedVal) {
-          // Color type values by their category
           const asNode = trimmedVal as NodeType;
           const asConn = trimmedVal as ConnectionType;
           if (nodeTypeNames.includes(asNode)) {
-            parts.push(valIndent);
-            parts.push(<span key={key++} style={{ color: NODE_COLORS[asNode] }}>{trimmedVal}</span>);
+            html += escHtml(valIndent);
+            html += `<span style="color:${NODE_COLORS[asNode]}">${escHtml(trimmedVal)}</span>`;
           } else if (connTypeNames.includes(asConn)) {
-            parts.push(valIndent);
-            parts.push(<span key={key++} style={{ color: CONNECTION_STYLES[asConn].stroke }}>{trimmedVal}</span>);
+            html += escHtml(valIndent);
+            html += `<span style="color:${CONNECTION_STYLES[asConn].stroke}">${escHtml(trimmedVal)}</span>`;
           } else {
-            parts.push(<span key={key++} style={{ color: '#F1FA8C' }}>{value}</span>);
+            html += `<span style="color:#F1FA8C">${escHtml(value)}</span>`;
           }
         } else if (trimmedVal) {
-          parts.push(<span key={key++} style={{ color: '#F8F8F2' }}>{value}</span>);
+          html += `<span style="color:#F8F8F2">${escHtml(value)}</span>`;
         }
       } else {
-        // Comment or plain line
-        const commentIdx = remaining.indexOf('#');
+        const commentIdx = line.indexOf('#');
         if (commentIdx >= 0) {
-          parts.push(<span key={key++} style={{ color: '#6272A4' }}>{remaining.slice(0, commentIdx)}</span>);
-          parts.push(<span key={key++} style={{ color: '#6272A4' }}>{remaining.slice(commentIdx)}</span>);
+          html += `<span style="color:#6272A4">${escHtml(line)}</span>`;
         } else {
-          parts.push(<span key={key++} style={{ color: '#F8F8F2' }}>{remaining}</span>);
+          html += `<span style="color:#F8F8F2">${escHtml(line)}</span>`;
         }
       }
     }
 
-    return (
-      <React.Fragment key={lineIdx}>
-        {parts}
-        {lineIdx < lines.length - 1 ? '\n' : ''}
-      </React.Fragment>
-    );
-  });
+    if (isFlash) html += '</span>';
+    return html;
+  }).join('\n');
 }
 
-const YamlEditor: React.FC<Props> = ({ value, onChange, error, highlightLines, flashLines: flashLinesProp, onAddNode, onAddConnection, notes, onNotesChange, activeEditorTab, onEditorTabChange }) => {
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const preRef = useRef<HTMLPreElement>(null);
+// Save and restore cursor position in a contentEditable element
+function saveCaret(el: HTMLElement): number {
+  const sel = window.getSelection();
+  if (!sel || sel.rangeCount === 0) return 0;
+  const range = sel.getRangeAt(0);
+  const preRange = range.cloneRange();
+  preRange.selectNodeContents(el);
+  preRange.setEnd(range.startContainer, range.startOffset);
+  return preRange.toString().length;
+}
+
+function restoreCaret(el: HTMLElement, pos: number) {
+  const sel = window.getSelection();
+  if (!sel) return;
+  let remaining = pos;
+  const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+  let node: Text | null;
+  while ((node = walker.nextNode() as Text | null)) {
+    if (remaining <= node.length) {
+      const range = document.createRange();
+      range.setStart(node, remaining);
+      range.collapse(true);
+      sel.removeAllRanges();
+      sel.addRange(range);
+      return;
+    }
+    remaining -= node.length;
+  }
+  // If we couldn't find position, place at end
+  const range = document.createRange();
+  range.selectNodeContents(el);
+  range.collapse(false);
+  sel.removeAllRanges();
+  sel.addRange(range);
+}
+
+const YamlEditor: React.FC<Props> = ({
+  value, onChange, error, highlightLines, flashLines: flashLinesProp,
+  onAddNode, onAddConnection, notes, onNotesChange, activeEditorTab, onEditorTabChange,
+}) => {
+  const yamlRef = useRef<HTMLDivElement>(null);
   const notesRef = useRef<HTMLDivElement>(null);
   const notesInitialized = useRef(false);
+  const isUpdatingFromProp = useRef(false);
   const [flashLines, setFlashLines] = useState<{ start: number; end: number } | null>(null);
 
-  // Keep pre and textarea scroll in sync continuously
-  const syncScroll = useCallback(() => {
-    if (textareaRef.current && preRef.current) {
-      preRef.current.scrollTop = textareaRef.current.scrollTop;
-      preRef.current.scrollLeft = textareaRef.current.scrollLeft;
+  // Sync value prop → contentEditable innerHTML (only when value changes externally)
+  useEffect(() => {
+    const el = yamlRef.current;
+    if (!el) return;
+    const currentText = el.innerText;
+    // Normalize: innerText may add/remove trailing newline
+    if (currentText.replace(/\n$/, '') === value.replace(/\n$/, '')) return;
+    isUpdatingFromProp.current = true;
+    const pos = saveCaret(el);
+    el.innerHTML = highlightYamlToHtml(value, flashLines?.start, flashLines?.end);
+    restoreCaret(el, pos);
+    isUpdatingFromProp.current = false;
+  }, [value, flashLines]);
+
+  const handleYamlInput = useCallback(() => {
+    if (isUpdatingFromProp.current) return;
+    const el = yamlRef.current;
+    if (!el) return;
+    const text = el.innerText;
+    // Re-highlight after a short delay to avoid cursor jump during typing
+    const pos = saveCaret(el);
+    onChange(text);
+    // Defer re-highlight to next frame
+    requestAnimationFrame(() => {
+      if (!yamlRef.current) return;
+      isUpdatingFromProp.current = true;
+      yamlRef.current.innerHTML = highlightYamlToHtml(text);
+      restoreCaret(yamlRef.current, pos);
+      isUpdatingFromProp.current = false;
+    });
+  }, [onChange]);
+
+  // Handle paste — insert plain text only
+  const handlePaste = useCallback((e: React.ClipboardEvent) => {
+    e.preventDefault();
+    const text = e.clipboardData.getData('text/plain');
+    document.execCommand('insertText', false, text);
+  }, []);
+
+  // Handle Tab key — insert 2 spaces
+  const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
+    if (e.key === 'Tab') {
+      e.preventDefault();
+      document.execCommand('insertText', false, '  ');
     }
   }, []);
 
-  // Sync on every render (catches programmatic scroll changes after content updates)
+  // Double-click highlight from diagram
   useEffect(() => {
-    syncScroll();
-  });
-
-  const handleScroll = syncScroll;
-
-  // Scroll textarea to highlighted lines and select them
-  useEffect(() => {
-    if (!highlightLines || !textareaRef.current) return;
+    if (!highlightLines || !yamlRef.current) return;
     onEditorTabChange('yaml');
-    // Small delay to let tab switch render before scrolling
-    setTimeout(() => scrollToLines(highlightLines.start, highlightLines.end, true), 50);
+    setTimeout(() => {
+      const el = yamlRef.current;
+      if (!el) return;
+      const text = el.innerText;
+      const lines = text.split('\n');
+      let startPos = 0;
+      for (let i = 0; i < highlightLines.start; i++) {
+        startPos += lines[i].length + 1;
+      }
+      let endPos = startPos;
+      for (let i = highlightLines.start; i <= Math.min(highlightLines.end, lines.length - 1); i++) {
+        endPos += lines[i].length + 1;
+      }
+      el.focus();
+      // Select the range
+      const sel = window.getSelection();
+      if (!sel) return;
+      restoreCaret(el, startPos);
+      const range = sel.getRangeAt(0);
+      // Extend to end
+      let remaining = endPos - 1 - startPos;
+      const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+      let node: Text | null;
+      let found = false;
+      // First get to startPos
+      let skip = startPos;
+      while ((node = walker.nextNode() as Text | null)) {
+        if (skip <= node.length) {
+          range.setStart(node, skip);
+          remaining += skip;
+          break;
+        }
+        skip -= node.length;
+      }
+      // Now extend
+      remaining = endPos - 1 - startPos;
+      while (node && remaining > 0) {
+        const available = node.length - (node === range.startContainer ? range.startOffset : 0);
+        if (remaining <= available) {
+          range.setEnd(node, (node === range.startContainer ? range.startOffset : 0) + remaining);
+          found = true;
+          break;
+        }
+        remaining -= available;
+        node = walker.nextNode() as Text | null;
+        if (node) {
+          if (remaining <= node.length) {
+            range.setEnd(node, remaining);
+            found = true;
+            break;
+          }
+        }
+      }
+      if (!found) {
+        range.selectNodeContents(el);
+      }
+      sel.removeAllRanges();
+      sel.addRange(range);
+      // Scroll into view
+      const lineHeight = 20.8;
+      el.scrollTop = Math.max(0, highlightLines.start * lineHeight - 60);
+    }, 50);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [highlightLines]);
 
-  // Flash animation for newly added entries
+  // Flash
   useEffect(() => {
     if (flashLinesProp) setFlashLines(flashLinesProp);
   }, [flashLinesProp]);
@@ -127,64 +249,13 @@ const YamlEditor: React.FC<Props> = ({ value, onChange, error, highlightLines, f
     return () => clearTimeout(timer);
   }, [flashLines]);
 
-  // Scroll to flash target — only scroll, don't steal cursor
   useEffect(() => {
-    if (!flashLines || !textareaRef.current) return;
-    const ta = textareaRef.current;
+    if (!flashLines || !yamlRef.current) return;
     const lineHeight = 20.8;
-    ta.scrollTop = Math.max(0, flashLines.start * lineHeight - 60);
-    if (preRef.current) {
-      preRef.current.scrollTop = ta.scrollTop;
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    yamlRef.current.scrollTop = Math.max(0, flashLines.start * lineHeight - 60);
   }, [flashLines]);
 
-  const scrollToLines = useCallback((start: number, end: number, select: boolean) => {
-    const ta = textareaRef.current;
-    if (!ta) return;
-    const lines = value.split('\n');
-    let startPos = 0;
-    for (let i = 0; i < start; i++) {
-      startPos += lines[i].length + 1;
-    }
-    let endPos = startPos;
-    for (let i = start; i <= Math.min(end, lines.length - 1); i++) {
-      endPos += lines[i].length + 1;
-    }
-    ta.focus();
-    if (select) {
-      ta.setSelectionRange(startPos, endPos - 1);
-    } else {
-      ta.setSelectionRange(startPos, startPos);
-    }
-    const lineHeight = 20.8;
-    ta.scrollTop = Math.max(0, start * lineHeight - 60);
-    if (preRef.current) {
-      preRef.current.scrollTop = ta.scrollTop;
-    }
-  }, [value]);
-
-  const highlighted = useMemo(() => {
-    const base = highlightYaml(value);
-    if (!flashLines) return base;
-
-    // Wrap flashing lines with a flash marker
-    const lines = value.split('\n');
-    return lines.map((line, lineIdx) => {
-      const isFlash = lineIdx >= flashLines.start && lineIdx <= flashLines.end;
-      const parts = highlightYaml(line + (lineIdx < lines.length - 1 ? '\n' : ''));
-      if (isFlash) {
-        return (
-          <span key={lineIdx} className="yaml-flash">
-            {parts}
-          </span>
-        );
-      }
-      return <React.Fragment key={lineIdx}>{parts}</React.Fragment>;
-    });
-  }, [value, flashLines]);
-
-  // Initialize notes content when switching to notes tab
+  // Notes
   useEffect(() => {
     if (activeEditorTab === 'notes' && notesRef.current && !notesInitialized.current) {
       notesRef.current.innerHTML = notes;
@@ -196,32 +267,15 @@ const YamlEditor: React.FC<Props> = ({ value, onChange, error, highlightLines, f
   }, [activeEditorTab, notes]);
 
   const handleNotesInput = useCallback(() => {
-    if (notesRef.current) {
-      onNotesChange(notesRef.current.innerHTML);
-    }
+    if (notesRef.current) onNotesChange(notesRef.current.innerHTML);
   }, [onNotesChange]);
 
   const handleNotesKeyDown = useCallback((e: React.KeyboardEvent) => {
-    if ((e.ctrlKey || e.metaKey) && e.key === 'b') {
-      e.preventDefault();
-      document.execCommand('bold');
-    }
-    if ((e.ctrlKey || e.metaKey) && e.key === 'i') {
-      e.preventDefault();
-      document.execCommand('italic');
-    }
-    if ((e.ctrlKey || e.metaKey) && e.key === 'u') {
-      e.preventDefault();
-      document.execCommand('underline');
-    }
-    if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === '7') {
-      e.preventDefault();
-      document.execCommand('insertOrderedList');
-    }
-    if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === '8') {
-      e.preventDefault();
-      document.execCommand('insertUnorderedList');
-    }
+    if ((e.ctrlKey || e.metaKey) && e.key === 'b') { e.preventDefault(); document.execCommand('bold'); }
+    if ((e.ctrlKey || e.metaKey) && e.key === 'i') { e.preventDefault(); document.execCommand('italic'); }
+    if ((e.ctrlKey || e.metaKey) && e.key === 'u') { e.preventDefault(); document.execCommand('underline'); }
+    if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === '7') { e.preventDefault(); document.execCommand('insertOrderedList'); }
+    if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === '8') { e.preventDefault(); document.execCommand('insertUnorderedList'); }
   }, []);
 
   return (
@@ -243,17 +297,16 @@ const YamlEditor: React.FC<Props> = ({ value, onChange, error, highlightLines, f
       {activeEditorTab === 'yaml' ? (
         <>
           <div className="editor-body">
-            <pre ref={preRef} className="yaml-highlight" aria-hidden="true">
-              <code>{highlighted}</code>
-            </pre>
-            <textarea
-              ref={textareaRef}
-              className="yaml-textarea"
-              value={value}
-              onChange={(e) => { onChange(e.target.value); requestAnimationFrame(syncScroll); }}
-              onScroll={handleScroll}
+            <div
+              ref={yamlRef}
+              className="yaml-editor"
+              contentEditable
+              suppressContentEditableWarning
+              onInput={handleYamlInput}
+              onPaste={handlePaste}
+              onKeyDown={handleKeyDown}
               spellCheck={false}
-              placeholder="Define your architecture here..."
+              data-placeholder="Define your architecture here..."
             />
           </div>
           {error && <div className="editor-error">⚠ {error}</div>}
