@@ -365,6 +365,10 @@
 .yaml-highlight code {
   font-family: inherit;
   font-size: inherit;
+  line-height: inherit;
+  display: block;
+  margin: 0;
+  padding: 0;
 }
 
 .yaml-textarea {
@@ -385,6 +389,11 @@
   outline: none;
   tab-size: 2;
   z-index: 1;
+  white-space: pre;
+  overflow-wrap: normal;
+  word-wrap: normal;
+  overflow: auto;
+  margin: 0;
 }
 
 .yaml-textarea::placeholder {
