@@ -1,5 +1,8 @@
 import React, { useRef, useCallback, useEffect, useState } from 'react';
-import { NODE_COLORS, CONNECTION_STYLES, type NodeType, type ConnectionType } from '../types/diagram';
+import CodeMirror, { type ReactCodeMirrorRef } from '@uiw/react-codemirror';
+import { yaml } from '@codemirror/lang-yaml';
+import { EditorView } from '@codemirror/view';
+import { type NodeType, type ConnectionType } from '../types/diagram';
 import ReferencePanel from './ReferencePanel';
 
 interface Props {
@@ -16,231 +19,79 @@ interface Props {
   onEditorTabChange: (tab: 'yaml' | 'notes') => void;
 }
 
-const YAML_KEYWORDS = ['nodes:', 'connections:'];
-const nodeTypeNames = Object.keys(NODE_COLORS) as NodeType[];
-const connTypeNames = Object.keys(CONNECTION_STYLES) as ConnectionType[];
+// Dark theme matching the app
+const darkTheme = EditorView.theme({
+  '&': {
+    backgroundColor: 'transparent',
+    color: '#c8d6e5',
+    fontSize: '13px',
+  },
+  '.cm-content': {
+    fontFamily: "'JetBrains Mono', 'Fira Code', 'Consolas', monospace",
+    caretColor: '#e0e0e0',
+    padding: '8px 0',
+  },
+  '.cm-gutters': {
+    backgroundColor: 'transparent',
+    borderRight: '1px solid #2a2a3e',
+    color: '#4a4a6a',
+  },
+  '.cm-activeLineGutter': {
+    backgroundColor: 'rgba(255,255,255,0.05)',
+  },
+  '.cm-activeLine': {
+    backgroundColor: 'rgba(255,255,255,0.03)',
+  },
+  '.cm-cursor': {
+    borderLeftColor: '#e0e0e0',
+  },
+  '.cm-selectionBackground': {
+    backgroundColor: 'rgba(74, 144, 217, 0.35) !important',
+  },
+  '&.cm-focused .cm-selectionBackground': {
+    backgroundColor: 'rgba(74, 144, 217, 0.35) !important',
+  },
+  '.cm-line': {
+    padding: '0 8px',
+  },
+  '.cm-scroller': {
+    overflow: 'auto',
+  },
+}, { dark: true });
 
-function escHtml(s: string): string {
-  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-}
-
-function highlightYamlToHtml(text: string, flashStart?: number, flashEnd?: number): string {
-  const lines = text.split('\n');
-  return lines.map((line, lineIdx) => {
-    let html = '';
-    const isFlash = flashStart !== undefined && flashEnd !== undefined &&
-      lineIdx >= flashStart && lineIdx <= flashEnd;
-
-    if (isFlash) html += '<span class="yaml-flash">';
-
-    const kwMatch = YAML_KEYWORDS.find((kw) => line.trimStart() === kw);
-    if (kwMatch) {
-      const indent = line.indexOf(kwMatch);
-      if (indent > 0) html += escHtml(line.slice(0, indent));
-      html += `<span style="color:#FF79C6">${escHtml(kwMatch)}</span>`;
-    } else {
-      const fieldMatch = line.match(/^(\s*-?\s*)(id|label|type|from|to)(:)(.*)/);
-      if (fieldMatch) {
-        const [, indent, fieldName, colon, value] = fieldMatch;
-        html += escHtml(indent);
-        html += `<span style="color:#8BE9FD">${escHtml(fieldName + colon)}</span>`;
-        const trimmedVal = value.trimStart();
-        const valIndent = value.slice(0, value.length - trimmedVal.length);
-        if (fieldName === 'type' && trimmedVal) {
-          const asNode = trimmedVal as NodeType;
-          const asConn = trimmedVal as ConnectionType;
-          if (nodeTypeNames.includes(asNode)) {
-            html += escHtml(valIndent);
-            html += `<span style="color:${NODE_COLORS[asNode]}">${escHtml(trimmedVal)}</span>`;
-          } else if (connTypeNames.includes(asConn)) {
-            html += escHtml(valIndent);
-            html += `<span style="color:${CONNECTION_STYLES[asConn].stroke}">${escHtml(trimmedVal)}</span>`;
-          } else {
-            html += `<span style="color:#F1FA8C">${escHtml(value)}</span>`;
-          }
-        } else if (trimmedVal) {
-          html += `<span style="color:#F8F8F2">${escHtml(value)}</span>`;
-        }
-      } else {
-        const commentIdx = line.indexOf('#');
-        if (commentIdx >= 0) {
-          html += `<span style="color:#6272A4">${escHtml(line)}</span>`;
-        } else {
-          html += `<span style="color:#F8F8F2">${escHtml(line)}</span>`;
-        }
-      }
-    }
-
-    if (isFlash) html += '</span>';
-    return html;
-  }).join('\n');
-}
-
-// Save and restore cursor position in a contentEditable element
-function saveCaret(el: HTMLElement): number {
-  const sel = window.getSelection();
-  if (!sel || sel.rangeCount === 0) return 0;
-  const range = sel.getRangeAt(0);
-  const preRange = range.cloneRange();
-  preRange.selectNodeContents(el);
-  preRange.setEnd(range.startContainer, range.startOffset);
-  return preRange.toString().length;
-}
-
-function restoreCaret(el: HTMLElement, pos: number) {
-  const sel = window.getSelection();
-  if (!sel) return;
-  let remaining = pos;
-  const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
-  let node: Text | null;
-  while ((node = walker.nextNode() as Text | null)) {
-    if (remaining <= node.length) {
-      const range = document.createRange();
-      range.setStart(node, remaining);
-      range.collapse(true);
-      sel.removeAllRanges();
-      sel.addRange(range);
-      return;
-    }
-    remaining -= node.length;
-  }
-  // If we couldn't find position, place at end
-  const range = document.createRange();
-  range.selectNodeContents(el);
-  range.collapse(false);
-  sel.removeAllRanges();
-  sel.addRange(range);
-}
+const cmExtensions = [yaml(), darkTheme];
 
 const YamlEditor: React.FC<Props> = ({
   value, onChange, error, highlightLines, flashLines: flashLinesProp,
   onAddNode, onAddConnection, notes, onNotesChange, activeEditorTab, onEditorTabChange,
 }) => {
-  const yamlRef = useRef<HTMLDivElement>(null);
+  const cmRef = useRef<ReactCodeMirrorRef>(null);
   const notesRef = useRef<HTMLDivElement>(null);
   const notesInitialized = useRef(false);
-  const isUpdatingFromProp = useRef(false);
-  const highlightTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [flashLines, setFlashLines] = useState<{ start: number; end: number } | null>(null);
 
-  // Sync value prop → contentEditable innerHTML
+  // Double-click node/connection in diagram → scroll to & select YAML block
   useEffect(() => {
-    const el = yamlRef.current;
-    if (!el) return;
-    const currentText = el.innerText;
-    if (currentText.replace(/\n$/, '') === value.replace(/\n$/, '')) return;
-    isUpdatingFromProp.current = true;
-    const pos = saveCaret(el);
-    el.innerHTML = highlightYamlToHtml(value, flashLines?.start, flashLines?.end);
-    restoreCaret(el, pos);
-    isUpdatingFromProp.current = false;
-  }, [value, flashLines, activeEditorTab]);
-
-  const handleYamlInput = useCallback(() => {
-    if (isUpdatingFromProp.current) return;
-    const el = yamlRef.current;
-    if (!el) return;
-    const text = el.innerText;
-    onChange(text);
-    // Debounce re-highlight: only apply after user stops typing for 500ms
-    // This preserves the browser's native undo stack during active editing
-    if (highlightTimer.current) clearTimeout(highlightTimer.current);
-    highlightTimer.current = setTimeout(() => {
-      if (!yamlRef.current) return;
-      const currentText = yamlRef.current.innerText;
-      const pos = saveCaret(yamlRef.current);
-      isUpdatingFromProp.current = true;
-      yamlRef.current.innerHTML = highlightYamlToHtml(currentText);
-      restoreCaret(yamlRef.current, pos);
-      isUpdatingFromProp.current = false;
-    }, 500);
-  }, [onChange]);
-
-  // Handle paste — insert plain text only
-  const handlePaste = useCallback((e: React.ClipboardEvent) => {
-    e.preventDefault();
-    const text = e.clipboardData.getData('text/plain');
-    document.execCommand('insertText', false, text);
-  }, []);
-
-  // Handle Tab key — insert 2 spaces
-  const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
-    if (e.key === 'Tab') {
-      e.preventDefault();
-      document.execCommand('insertText', false, '  ');
-    }
-  }, []);
-
-  // Double-click highlight from diagram
-  useEffect(() => {
-    if (!highlightLines || !yamlRef.current) return;
+    if (!highlightLines) return;
     onEditorTabChange('yaml');
     setTimeout(() => {
-      const el = yamlRef.current;
-      if (!el) return;
-      const text = el.innerText;
-      const lines = text.split('\n');
-      let startPos = 0;
-      for (let i = 0; i < highlightLines.start; i++) {
-        startPos += lines[i].length + 1;
-      }
-      let endPos = startPos;
-      for (let i = highlightLines.start; i <= Math.min(highlightLines.end, lines.length - 1); i++) {
-        endPos += lines[i].length + 1;
-      }
-      el.focus();
-      // Select the range
-      const sel = window.getSelection();
-      if (!sel) return;
-      restoreCaret(el, startPos);
-      const range = sel.getRangeAt(0);
-      // Extend to end
-      let remaining = endPos - 1 - startPos;
-      const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
-      let node: Text | null;
-      let found = false;
-      // First get to startPos
-      let skip = startPos;
-      while ((node = walker.nextNode() as Text | null)) {
-        if (skip <= node.length) {
-          range.setStart(node, skip);
-          remaining += skip;
-          break;
-        }
-        skip -= node.length;
-      }
-      // Now extend
-      remaining = endPos - 1 - startPos;
-      while (node && remaining > 0) {
-        const available = node.length - (node === range.startContainer ? range.startOffset : 0);
-        if (remaining <= available) {
-          range.setEnd(node, (node === range.startContainer ? range.startOffset : 0) + remaining);
-          found = true;
-          break;
-        }
-        remaining -= available;
-        node = walker.nextNode() as Text | null;
-        if (node) {
-          if (remaining <= node.length) {
-            range.setEnd(node, remaining);
-            found = true;
-            break;
-          }
-        }
-      }
-      if (!found) {
-        range.selectNodeContents(el);
-      }
-      sel.removeAllRanges();
-      sel.addRange(range);
-      // Scroll into view
-      const lineHeight = 20.8;
-      el.scrollTop = Math.max(0, highlightLines.start * lineHeight - 60);
+      const view = cmRef.current?.view;
+      if (!view) return;
+      const doc = view.state.doc;
+      const startLine = Math.min(highlightLines.start + 1, doc.lines);
+      const endLine = Math.min(highlightLines.end + 1, doc.lines);
+      const from = doc.line(startLine).from;
+      const to = doc.line(endLine).to;
+      view.dispatch({
+        selection: { anchor: from, head: to },
+        scrollIntoView: true,
+      });
+      view.focus();
     }, 50);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [highlightLines]);
 
-  // Flash
+  // Flash animation for newly added entries
   useEffect(() => {
     if (flashLinesProp) setFlashLines(flashLinesProp);
   }, [flashLinesProp]);
@@ -252,9 +103,13 @@ const YamlEditor: React.FC<Props> = ({
   }, [flashLines]);
 
   useEffect(() => {
-    if (!flashLines || !yamlRef.current) return;
-    const lineHeight = 20.8;
-    yamlRef.current.scrollTop = Math.max(0, flashLines.start * lineHeight - 60);
+    if (!flashLines) return;
+    const view = cmRef.current?.view;
+    if (!view) return;
+    const doc = view.state.doc;
+    const startLine = Math.min(flashLines.start + 1, doc.lines);
+    const from = doc.line(startLine).from;
+    view.dispatch({ scrollIntoView: true, selection: { anchor: from } });
   }, [flashLines]);
 
   // Notes
@@ -280,6 +135,10 @@ const YamlEditor: React.FC<Props> = ({
     if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === '8') { e.preventDefault(); document.execCommand('insertUnorderedList'); }
   }, []);
 
+  const handleCmChange = useCallback((val: string) => {
+    onChange(val);
+  }, [onChange]);
+
   return (
     <div className="editor-panel">
       <div className="editor-tabs">
@@ -296,23 +155,28 @@ const YamlEditor: React.FC<Props> = ({
           📓 Notes
         </button>
       </div>
-      <div style={{ display: activeEditorTab === 'yaml' ? 'contents' : 'none' }}>
-        <div className="editor-body">
-          <div
-            ref={yamlRef}
-            className="yaml-editor"
-            contentEditable
-            suppressContentEditableWarning
-            onInput={handleYamlInput}
-            onPaste={handlePaste}
-            onKeyDown={handleKeyDown}
-            spellCheck={false}
-            data-placeholder="Define your architecture here..."
-          />
-        </div>
-        {error && <div className="editor-error">⚠ {error}</div>}
-        <ReferencePanel onAddNode={onAddNode} onAddConnection={onAddConnection} />
+      <div className="editor-body" style={{ display: activeEditorTab === 'yaml' ? 'flex' : 'none' }}>
+        <CodeMirror
+          ref={cmRef}
+          value={value}
+          onChange={handleCmChange}
+          extensions={cmExtensions}
+          theme="none"
+          basicSetup={{
+            lineNumbers: true,
+            foldGutter: false,
+            highlightActiveLine: true,
+            highlightSelectionMatches: true,
+            bracketMatching: false,
+            closeBrackets: false,
+            autocompletion: false,
+            indentOnInput: true,
+          }}
+          style={{ flex: 1, overflow: 'auto' }}
+        />
       </div>
+      {activeEditorTab === 'yaml' && error && <div className="editor-error">⚠ {error}</div>}
+      {activeEditorTab === 'yaml' && <ReferencePanel onAddNode={onAddNode} onAddConnection={onAddConnection} />}
       <div className="notes-body" style={{ display: activeEditorTab === 'notes' ? 'flex' : 'none' }}>
         <div
           ref={notesRef}
