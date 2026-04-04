@@ -120,6 +120,7 @@ const YamlEditor: React.FC<Props> = ({
   const notesRef = useRef<HTMLDivElement>(null);
   const notesInitialized = useRef(false);
   const isUpdatingFromProp = useRef(false);
+  const highlightTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [flashLines, setFlashLines] = useState<{ start: number; end: number } | null>(null);
 
   // Sync value prop → contentEditable innerHTML
@@ -140,17 +141,19 @@ const YamlEditor: React.FC<Props> = ({
     const el = yamlRef.current;
     if (!el) return;
     const text = el.innerText;
-    // Re-highlight after a short delay to avoid cursor jump during typing
-    const pos = saveCaret(el);
     onChange(text);
-    // Defer re-highlight to next frame
-    requestAnimationFrame(() => {
+    // Debounce re-highlight: only apply after user stops typing for 500ms
+    // This preserves the browser's native undo stack during active editing
+    if (highlightTimer.current) clearTimeout(highlightTimer.current);
+    highlightTimer.current = setTimeout(() => {
       if (!yamlRef.current) return;
+      const currentText = yamlRef.current.innerText;
+      const pos = saveCaret(yamlRef.current);
       isUpdatingFromProp.current = true;
-      yamlRef.current.innerHTML = highlightYamlToHtml(text);
+      yamlRef.current.innerHTML = highlightYamlToHtml(currentText);
       restoreCaret(yamlRef.current, pos);
       isUpdatingFromProp.current = false;
-    });
+    }, 500);
   }, [onChange]);
 
   // Handle paste — insert plain text only
@@ -293,37 +296,34 @@ const YamlEditor: React.FC<Props> = ({
           📓 Notes
         </button>
       </div>
-      {activeEditorTab === 'yaml' ? (
-        <>
-          <div className="editor-body">
-            <div
-              ref={yamlRef}
-              className="yaml-editor"
-              contentEditable
-              suppressContentEditableWarning
-              onInput={handleYamlInput}
-              onPaste={handlePaste}
-              onKeyDown={handleKeyDown}
-              spellCheck={false}
-              data-placeholder="Define your architecture here..."
-            />
-          </div>
-          {error && <div className="editor-error">⚠ {error}</div>}
-          <ReferencePanel onAddNode={onAddNode} onAddConnection={onAddConnection} />
-        </>
-      ) : (
-        <div className="notes-body">
+      <div style={{ display: activeEditorTab === 'yaml' ? 'contents' : 'none' }}>
+        <div className="editor-body">
           <div
-            ref={notesRef}
-            className="notes-editor"
+            ref={yamlRef}
+            className="yaml-editor"
             contentEditable
             suppressContentEditableWarning
-            onInput={handleNotesInput}
-            onKeyDown={handleNotesKeyDown}
-            data-placeholder="Design notes, trade-offs, assumptions, interview talking points..."
+            onInput={handleYamlInput}
+            onPaste={handlePaste}
+            onKeyDown={handleKeyDown}
+            spellCheck={false}
+            data-placeholder="Define your architecture here..."
           />
         </div>
-      )}
+        {error && <div className="editor-error">⚠ {error}</div>}
+        <ReferencePanel onAddNode={onAddNode} onAddConnection={onAddConnection} />
+      </div>
+      <div className="notes-body" style={{ display: activeEditorTab === 'notes' ? 'flex' : 'none' }}>
+        <div
+          ref={notesRef}
+          className="notes-editor"
+          contentEditable
+          suppressContentEditableWarning
+          onInput={handleNotesInput}
+          onKeyDown={handleNotesKeyDown}
+          data-placeholder="Design notes, trade-offs, assumptions, interview talking points..."
+        />
+      </div>
     </div>
   );
 };
