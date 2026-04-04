@@ -102,7 +102,6 @@ const YamlEditor: React.FC<Props> = ({ value, onChange, error, highlightLines, f
   // Scroll textarea to highlighted lines and select them
   useEffect(() => {
     if (!highlightLines || !textareaRef.current) return;
-    console.log("[YamlEditor] Highlighting lines:", highlightLines.start, "-", highlightLines.end);
     onEditorTabChange('yaml');
     // Small delay to let tab switch render before scrolling
     setTimeout(() => scrollToLines(highlightLines.start, highlightLines.end, true), 50);
@@ -120,10 +119,15 @@ const YamlEditor: React.FC<Props> = ({ value, onChange, error, highlightLines, f
     return () => clearTimeout(timer);
   }, [flashLines]);
 
-  // Scroll to flash target
+  // Scroll to flash target — only scroll, don't steal cursor
   useEffect(() => {
     if (!flashLines || !textareaRef.current) return;
-    scrollToLines(flashLines.start, flashLines.end, false);
+    const ta = textareaRef.current;
+    const lineHeight = 20.8;
+    ta.scrollTop = Math.max(0, flashLines.start * lineHeight - 60);
+    if (preRef.current) {
+      preRef.current.scrollTop = ta.scrollTop;
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [flashLines]);
 
