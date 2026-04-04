@@ -112,9 +112,14 @@ function App() {
     redoStack.current = [];
   }, [activeId]);
 
-  // Keyboard shortcut: Ctrl+Z / Ctrl+Shift+Z / Ctrl+Y
+  // Keyboard shortcut: Ctrl+Z / Ctrl+Shift+Z / Ctrl+Y (only for drawing, not when editing text)
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
+      // Don't intercept when user is typing in an input, textarea, or contentEditable
+      const tag = (e.target as HTMLElement)?.tagName;
+      const isEditable = tag === 'INPUT' || tag === 'TEXTAREA' || (e.target as HTMLElement)?.isContentEditable;
+      if (isEditable) return;
+
       if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) {
         e.preventDefault();
         undoStroke();
