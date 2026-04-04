@@ -369,6 +369,13 @@ const DiagramCanvas: React.FC<Props> = ({
         className="diagram-svg"
         style={{ cursor: getCursor(), touchAction: 'none' }}
         onPointerDown={(e) => {
+          // Remove focus from editor panels so undo/redo targets canvas
+          if (document.activeElement instanceof HTMLElement) {
+            const tag = document.activeElement.tagName;
+            if (tag === 'TEXTAREA' || tag === 'INPUT' || document.activeElement.isContentEditable) {
+              document.activeElement.blur();
+            }
+          }
           const isPen = 'pointerType' in e && e.pointerType === 'pen';
           if (isPen || isDrawActive) handleDrawDown(e);
           else handleCanvasMouseDown(e);
