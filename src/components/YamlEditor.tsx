@@ -122,19 +122,18 @@ const YamlEditor: React.FC<Props> = ({
   const isUpdatingFromProp = useRef(false);
   const [flashLines, setFlashLines] = useState<{ start: number; end: number } | null>(null);
 
-  // Sync value prop → contentEditable innerHTML (only when value changes externally)
+  // Sync value prop → contentEditable innerHTML
   useEffect(() => {
     const el = yamlRef.current;
     if (!el) return;
     const currentText = el.innerText;
-    // Normalize: innerText may add/remove trailing newline
     if (currentText.replace(/\n$/, '') === value.replace(/\n$/, '')) return;
     isUpdatingFromProp.current = true;
     const pos = saveCaret(el);
     el.innerHTML = highlightYamlToHtml(value, flashLines?.start, flashLines?.end);
     restoreCaret(el, pos);
     isUpdatingFromProp.current = false;
-  }, [value, flashLines]);
+  }, [value, flashLines, activeEditorTab]);
 
   const handleYamlInput = useCallback(() => {
     if (isUpdatingFromProp.current) return;
